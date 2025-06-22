@@ -64,17 +64,36 @@ if (!fs.existsSync(absoluteCredentialsPath)) {
 }
 
 // Validate that it's a JSON file with the expected structure
+let serviceAccountEmail;
 try {
   const keyData = JSON.parse(fs.readFileSync(absoluteCredentialsPath, 'utf8'));
   if (!keyData.type || keyData.type !== 'service_account') {
     console.error('❌ The file does not appear to be a valid service account key.');
     process.exit(1);
   }
+  serviceAccountEmail = keyData.client_email;
   console.log(`✅ Found valid service account key: ${path.basename(absoluteCredentialsPath)}`);
-  console.log(`📧 Service account email: ${keyData.client_email}`);
+  console.log(`📧 Service account email: ${serviceAccountEmail}`);
   console.log('✅ Using service account key for authentication');
 } catch (e) {
   console.error('❌ The service account key file is not valid JSON or could not be read.');
+  process.exit(1);
+}
+
+// Activate the service account using gcloud CLI
+console.log('🔐 Activating service account with gcloud...');
+try {
+  execSync(`gcloud auth activate-service-account ${serviceAccountEmail} --key-file="${absoluteCredentialsPath}"`, {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
+    }
+  });
+  console.log('✅ Service account activated successfully');
+} catch (error) {
+  console.error('❌ Failed to activate service account:', error.message);
+  console.error('Make sure gcloud CLI is installed and accessible in your PATH');
   process.exit(1);
 }
 
