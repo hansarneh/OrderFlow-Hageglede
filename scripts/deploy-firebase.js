@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
-import os from 'os';
+import os from 'os'; // Import the 'os' module for temporary directory access
 
 // Load environment variables from .env file
 dotenv.config();
@@ -18,9 +18,9 @@ dotenv.config();
 console.log('\n🔥 Firebase Deployment Helper 🔥\n');
 
 let credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-let tempKeyFileCreated = false;
+let tempKeyFileCreated = false; // Flag to know if we created a temporary file
 
-// Check for service account JSON directly from an environment variable
+// NEW LOGIC: Check for service account JSON directly from an environment variable
 const serviceAccountJsonContent = process.env.FIREBASE_SA_KEY_JSON;
 
 if (!credentialsPath && serviceAccountJsonContent) {
@@ -30,8 +30,8 @@ if (!credentialsPath && serviceAccountJsonContent) {
     JSON.parse(serviceAccountJsonContent);
 
     // Create a temporary file to store the service account key
-    const tempDir = os.tmpdir();
-    const tempFileName = `temp-firebase-key-${Date.now()}.json`;
+    const tempDir = os.tmpdir(); // Get the system's temporary directory
+    const tempFileName = `temp-firebase-key-${Date.now()}.json`; // Unique name
     credentialsPath = path.join(tempDir, tempFileName);
 
     fs.writeFileSync(credentialsPath, serviceAccountJsonContent, 'utf8');
@@ -48,7 +48,7 @@ if (!credentialsPath && serviceAccountJsonContent) {
 }
 
 if (!credentialsPath) {
-  console.error('❌ No service account key found. GOOGLE_APPLICATION_CREDENTIALS environment variable or FIREBASE_SA_KEY_JSON content must be set.');
+  console.error('❌ Neither GOOGLE_APPLICATION_CREDENTIALS environment variable nor FIREBASE_SA_KEY_JSON content is set.');
   console.error('Please make sure you have configured your service account key.');
   process.exit(1);
 }
@@ -56,7 +56,7 @@ if (!credentialsPath) {
 // Resolve the path (in case it's relative)
 const absoluteCredentialsPath = path.resolve(credentialsPath);
 
-// Check if the credentials file exists
+// Check if the credentials file exists (this will now check the temporary file if created)
 if (!fs.existsSync(absoluteCredentialsPath)) {
   console.error(`❌ Service account key file not found at: ${absoluteCredentialsPath}`);
   console.error('Please make sure the file exists and the path is correct.');
@@ -78,41 +78,21 @@ try {
   process.exit(1);
 }
 
-console.log('🚀 Authenticating with Firebase using service account...');
+console.log('🚀 Running Firebase projects:list command for diagnostic purposes...'); // Changed for test
 
 try {
-  // First, logout any existing user sessions
-  try {
-    execSync('firebase logout', { stdio: 'pipe' });
-    console.log('🔓 Cleared existing Firebase login sessions');
-  } catch (logoutError) {
-    // Ignore logout errors - user might not be logged in
-  }
-
-  // Authenticate using the service account key file
-  execSync(`firebase auth:login --service-account ${absoluteCredentialsPath}`, {
+  // Run the Firebase projects:list command with explicit project ID
+  execSync('firebase projects:list --project order-flow-bolt', { // Changed for test
     stdio: 'inherit',
     env: {
-      ...process.env,
-      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
+      ...process.env, // Pass all current environment variables
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath // Ensure this is explicitly set for the child process
     }
   });
 
-  console.log('✅ Successfully authenticated with Firebase using service account');
-
-  // Now run the Firebase deployment
-  console.log('🚀 Starting Firebase deployment...');
-  execSync('firebase deploy --project order-flow-bolt', {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
-    }
-  });
-
-  console.log('\n✅ Firebase deployment completed successfully!');
+  console.log('\n✅ Firebase command completed successfully!'); // Changed for test
 } catch (error) {
-  console.error('\n❌ Firebase operation failed:', error.message);
+  console.error('\n❌ Firebase command failed:', error.message); // Changed for test
   process.exit(1);
 } finally {
   // Clean up the temporary file if we created one
