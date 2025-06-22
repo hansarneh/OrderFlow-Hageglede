@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
-import os from 'os'; // Import the 'os' module for temporary directory access
+import os from 'os';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -18,7 +18,7 @@ dotenv.config();
 console.log('\n🔥 Firebase Deployment Helper 🔥\n');
 
 let credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-let tempKeyFileCreated = false; // Flag to know if we created a temporary file
+let tempKeyFileCreated = false;
 
 // Check for service account JSON directly from an environment variable
 const serviceAccountJsonContent = process.env.FIREBASE_SA_KEY_JSON;
@@ -30,8 +30,8 @@ if (!credentialsPath && serviceAccountJsonContent) {
     JSON.parse(serviceAccountJsonContent);
 
     // Create a temporary file to store the service account key
-    const tempDir = os.tmpdir(); // Get the system's temporary directory
-    const tempFileName = `temp-firebase-key-${Date.now()}.json`; // Unique name
+    const tempDir = os.tmpdir();
+    const tempFileName = `temp-firebase-key-${Date.now()}.json`;
     credentialsPath = path.join(tempDir, tempFileName);
 
     fs.writeFileSync(credentialsPath, serviceAccountJsonContent, 'utf8');
@@ -56,7 +56,7 @@ if (!credentialsPath) {
 // Resolve the path (in case it's relative)
 const absoluteCredentialsPath = path.resolve(credentialsPath);
 
-// Check if the credentials file exists (this will now check the temporary file if created)
+// Check if the credentials file exists
 if (!fs.existsSync(absoluteCredentialsPath)) {
   console.error(`❌ Service account key file not found at: ${absoluteCredentialsPath}`);
   console.error('Please make sure the file exists and the path is correct.');
@@ -78,21 +78,41 @@ try {
   process.exit(1);
 }
 
-console.log('🚀 Running Firebase projects:list command for diagnostic purposes...'); // Changed for test
+console.log('🚀 Authenticating with Firebase using service account...');
 
 try {
-  // Run the Firebase projects:list command with explicit project ID
-  execSync('firebase projects:list --project order-flow-bolt', { // Changed for test
+  // First, logout any existing user sessions
+  try {
+    execSync('firebase logout', { stdio: 'pipe' });
+    console.log('🔓 Cleared existing Firebase login sessions');
+  } catch (logoutError) {
+    // Ignore logout errors - user might not be logged in
+  }
+
+  // Authenticate using the service account key file
+  execSync(`firebase auth:login --service-account ${absoluteCredentialsPath}`, {
     stdio: 'inherit',
     env: {
-      ...process.env, // Pass all current environment variables
-      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath // Ensure this is explicitly set for the child process
+      ...process.env,
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
     }
   });
 
-  console.log('\n✅ Firebase command completed successfully!'); // Changed for test
+  console.log('✅ Successfully authenticated with Firebase using service account');
+
+  // Now run the Firebase deployment
+  console.log('🚀 Starting Firebase deployment...');
+  execSync('firebase deploy --project order-flow-bolt', {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
+    }
+  });
+
+  console.log('\n✅ Firebase deployment completed successfully!');
 } catch (error) {
-  console.error('\n❌ Firebase command failed:', error.message); // Changed for test
+  console.error('\n❌ Firebase operation failed:', error.message);
   process.exit(1);
 } finally {
   // Clean up the temporary file if we created one
