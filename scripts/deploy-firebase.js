@@ -78,6 +78,22 @@ try {
   process.exit(1);
 }
 
+// First, log out of any existing Firebase sessions
+console.log('🔄 Logging out of any existing Firebase sessions...');
+try {
+  execSync('firebase logout', {
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
+    }
+  });
+  console.log('✅ Successfully logged out of existing Firebase sessions');
+} catch (error) {
+  console.warn('⚠️ Warning: Could not log out of Firebase. This is not critical if no user was logged in.');
+  // Continue with deployment even if logout fails
+}
+
 // Directly attempt to deploy Firebase functions
 console.log('🚀 Running Firebase deploy command...'); 
 
