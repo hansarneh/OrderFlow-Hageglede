@@ -2,8 +2,7 @@
 
 /**
  * This script handles Firebase deployment using a service account key.
- * It checks for the presence of the service account key and sets up the
- * GOOGLE_APPLICATION_CREDENTIALS environment variable before deploying.
+ * It obtains an access token from the service account and uses it for deployment.
  */
 
 import fs from 'fs';
@@ -11,6 +10,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import os from 'os'; // Import the 'os' module for temporary directory access
+import { GoogleAuth } from 'google-auth-library';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -78,41 +78,43 @@ try {
   process.exit(1);
 }
 
-// First, log out of any existing Firebase sessions
-console.log('🔄 Logging out of any existing Firebase sessions...');
-try {
-  execSync('firebase logout', {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
-    }
-  });
-  console.log('✅ Successfully logged out of existing Firebase sessions');
-} catch (error) {
-  console.warn('⚠️ Warning: Could not log out of Firebase. This is not critical if no user was logged in.');
-  // Continue with deployment even if logout fails
-}
-
-// Directly attempt to deploy Firebase functions
-console.log('🚀 Running Firebase deploy command...'); 
+// Get an access token using the service account
+console.log('🔑 Obtaining access token from service account...');
 
 try {
-  // Run the Firebase deploy command with explicit project ID
-  const deployCommand = 'firebase deploy --only functions --project order-flow-bolt';
-  console.log(`Executing command: ${deployCommand}`);
-  
-  execSync(deployCommand, { 
-    stdio: 'inherit',
-    env: {
-      ...process.env, // Pass all current environment variables
-      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath // Ensure this is explicitly set for the child process
-    }
+  // Create a new GoogleAuth instance with the service account key
+  const auth = new GoogleAuth({
+    keyFile: absoluteCredentialsPath,
+    scopes: ['https://www.googleapis.com/auth/cloud-platform']
   });
 
-  console.log('\n✅ Firebase deployment completed successfully!');
+  // Get an access token
+  const accessToken = await auth.getAccessToken();
+  console.log('✅ Successfully obtained access token');
+
+  // Directly attempt to deploy Firebase functions using the access token
+  console.log('🚀 Running Firebase deploy command with access token...'); 
+
+  try {
+    // Run the Firebase deploy command with explicit project ID and access token
+    const deployCommand = `firebase deploy --only functions --project order-flow-bolt --token "${accessToken}"`;
+    console.log(`Executing command: firebase deploy --only functions --project order-flow-bolt --token "********"`);
+    
+    execSync(deployCommand, { 
+      stdio: 'inherit',
+      env: {
+        ...process.env, // Pass all current environment variables
+        GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath // Ensure this is explicitly set for the child process
+      }
+    });
+
+    console.log('\n✅ Firebase deployment completed successfully!');
+  } catch (error) {
+    console.error('\n❌ Firebase deployment failed:', error.message);
+    process.exit(1);
+  }
 } catch (error) {
-  console.error('\n❌ Firebase deployment failed:', error.message);
+  console.error('❌ Failed to obtain access token:', error.message);
   process.exit(1);
 } finally {
   // Clean up the temporary file if we created one
