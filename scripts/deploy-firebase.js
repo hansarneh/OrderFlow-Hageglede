@@ -20,7 +20,7 @@ console.log('\n🔥 Firebase Deployment Helper 🔥\n');
 let credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let tempKeyFileCreated = false; // Flag to know if we created a temporary file
 
-// NEW LOGIC: Check for service account JSON directly from an environment variable
+// Check for service account JSON directly from an environment variable
 const serviceAccountJsonContent = process.env.FIREBASE_SA_KEY_JSON;
 
 if (!credentialsPath && serviceAccountJsonContent) {
@@ -78,11 +78,12 @@ try {
   process.exit(1);
 }
 
-console.log('🚀 Running Firebase projects:list command for diagnostic purposes...'); // Changed for test
+// Deploy Firebase functions
+console.log('🚀 Deploying Firebase functions...');
 
 try {
-  // Run the Firebase projects:list command with explicit project ID
-  execSync('firebase projects:list --project order-flow-bolt', { // Changed for test
+  // Run the Firebase deploy command with explicit project ID
+  execSync('firebase deploy --only functions --project order-flow-bolt', {
     stdio: 'inherit',
     env: {
       ...process.env, // Pass all current environment variables
@@ -90,9 +91,9 @@ try {
     }
   });
 
-  console.log('\n✅ Firebase command completed successfully!'); // Changed for test
+  console.log('\n✅ Firebase functions deployed successfully!');
 } catch (error) {
-  console.error('\n❌ Firebase command failed:', error.message); // Changed for test
+  console.error('\n❌ Firebase deployment failed:', error.message);
   process.exit(1);
 } finally {
   // Clean up the temporary file if we created one
