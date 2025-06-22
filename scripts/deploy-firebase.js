@@ -78,11 +78,15 @@ try {
   process.exit(1);
 }
 
-console.log('🚀 Running Firebase projects:list command for diagnostic purposes...'); // Changed for test
+// Directly attempt to deploy Firebase functions
+console.log('🚀 Running Firebase deploy command...'); 
 
 try {
-  // Run the Firebase projects:list command with explicit project ID
-  execSync('firebase projects:list --project order-flow-bolt', { // Changed for test
+  // Run the Firebase deploy command with explicit project ID
+  const deployCommand = 'firebase deploy --only functions --project order-flow-bolt';
+  console.log(`Executing command: ${deployCommand}`);
+  
+  execSync(deployCommand, { 
     stdio: 'inherit',
     env: {
       ...process.env, // Pass all current environment variables
@@ -90,9 +94,9 @@ try {
     }
   });
 
-  console.log('\n✅ Firebase command completed successfully!'); // Changed for test
+  console.log('\n✅ Firebase deployment completed successfully!');
 } catch (error) {
-  console.error('\n❌ Firebase command failed:', error.message); // Changed for test
+  console.error('\n❌ Firebase deployment failed:', error.message);
   process.exit(1);
 } finally {
   // Clean up the temporary file if we created one
