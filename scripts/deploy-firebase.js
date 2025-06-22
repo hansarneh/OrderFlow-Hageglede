@@ -67,8 +67,9 @@ async function main() {
     }
 
     // Validate that it's a JSON file with the expected structure
+    let keyData;
     try {
-      const keyData = JSON.parse(fs.readFileSync(absoluteCredentialsPath, 'utf8'));
+      keyData = JSON.parse(fs.readFileSync(absoluteCredentialsPath, 'utf8'));
       if (!keyData.type || keyData.type !== 'service_account') {
         console.error('❌ The file does not appear to be a valid service account key.');
         process.exit(1);
@@ -84,14 +85,17 @@ async function main() {
     // Get an access token using the service account
     console.log('🔑 Obtaining access token from service account...');
 
-    // Create a new GoogleAuth instance with the service account key
+    // Create a new GoogleAuth instance with the credentials directly
     const auth = new GoogleAuth({
-      keyFile: absoluteCredentialsPath,
+      credentials: keyData,
       scopes: ['https://www.googleapis.com/auth/cloud-platform']
     });
 
     // Get an access token
     const accessToken = await auth.getAccessToken();
+    if (!accessToken) {
+      throw new Error('Failed to obtain access token - token is null or undefined');
+    }
     console.log('✅ Successfully obtained access token');
 
     // Directly attempt to deploy Firebase functions using the access token
@@ -117,6 +121,9 @@ async function main() {
     }
   } catch (error) {
     console.error('❌ Failed to obtain access token:', error.message);
+    if (error.stack) {
+      console.error('Stack trace:', error.stack);
+    }
     process.exit(1);
   } finally {
     // Clean up the temporary file if we created one
