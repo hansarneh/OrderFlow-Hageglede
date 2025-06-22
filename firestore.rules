@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow authenticated users to list all profiles (collection-level query)
+    match /profiles {
+      allow list: if request.auth != null;
+    }
+    
+    // Allow users to read and manage their own profile, with admin override
+    match /profiles/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && (
+        request.auth.uid == userId || 
+        (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin')
+      );
+      allow delete: if request.auth != null && 
+        exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Allow authenticated users to read products
+    match /products/{productId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Allow authenticated users to read customer orders
+    match /customerOrders/{orderId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Allow authenticated users to read order lines
+    match /orderLines/{lineId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Allow users to manage their own integrations
+    match /integrations/{integrationId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Allow authenticated users to read purchase orders
+    match /purchaseOrders/{poId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Allow authenticated users to read purchase order lines
+    match /purchaseOrderLines/{lineId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin');
+    }
+  }
+}
