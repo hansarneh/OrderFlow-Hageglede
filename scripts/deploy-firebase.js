@@ -2,7 +2,8 @@
 
 /**
  * This script handles Firebase deployment using a service account key.
- * It obtains an access token from the service account and uses it for deployment.
+ * It checks for the presence of the service account key and sets up the
+ * GOOGLE_APPLICATION_CREDENTIALS environment variable before deploying.
  */
 
 import fs from 'fs';
@@ -10,7 +11,6 @@ import path from 'path';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import os from 'os'; // Import the 'os' module for temporary directory access
-import { GoogleAuth } from 'google-auth-library';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -20,126 +20,88 @@ console.log('\n🔥 Firebase Deployment Helper 🔥\n');
 let credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let tempKeyFileCreated = false; // Flag to know if we created a temporary file
 
-// Check for service account JSON directly from an environment variable
+// NEW LOGIC: Check for service account JSON directly from an environment variable
 const serviceAccountJsonContent = process.env.FIREBASE_SA_KEY_JSON;
 
-// Main function to handle the deployment process
-async function main() {
+if (!credentialsPath && serviceAccountJsonContent) {
+  console.log('💡 Found service account JSON content in FIREBASE_SA_KEY_JSON environment variable.');
   try {
-    if (!credentialsPath && serviceAccountJsonContent) {
-      console.log('💡 Found service account JSON content in FIREBASE_SA_KEY_JSON environment variable.');
-      try {
-        // Parse to validate and ensure it's JSON
-        JSON.parse(serviceAccountJsonContent);
+    // Parse to validate and ensure it's JSON
+    JSON.parse(serviceAccountJsonContent);
 
-        // Create a temporary file to store the service account key
-        const tempDir = os.tmpdir(); // Get the system's temporary directory
-        const tempFileName = `temp-firebase-key-${Date.now()}.json`; // Unique name
-        credentialsPath = path.join(tempDir, tempFileName);
+    // Create a temporary file to store the service account key
+    const tempDir = os.tmpdir(); // Get the system's temporary directory
+    const tempFileName = `temp-firebase-key-${Date.now()}.json`; // Unique name
+    credentialsPath = path.join(tempDir, tempFileName);
 
-        fs.writeFileSync(credentialsPath, serviceAccountJsonContent, 'utf8');
-        tempKeyFileCreated = true;
-        console.log(`✅ Created temporary service account key file at: ${credentialsPath}`);
+    fs.writeFileSync(credentialsPath, serviceAccountJsonContent, 'utf8');
+    tempKeyFileCreated = true;
+    console.log(`✅ Created temporary service account key file at: ${credentialsPath}`);
 
-        // Set GOOGLE_APPLICATION_CREDENTIALS to point to this temporary file for the CLI
-        process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
+    // Set GOOGLE_APPLICATION_CREDENTIALS to point to this temporary file for the CLI
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
 
-      } catch (e) {
-        console.error('❌ Failed to parse FIREBASE_SA_KEY_JSON content as valid JSON:', e.message);
-        process.exit(1);
-      }
-    }
-
-    if (!credentialsPath) {
-      console.error('❌ Neither GOOGLE_APPLICATION_CREDENTIALS environment variable nor FIREBASE_SA_KEY_JSON content is set.');
-      console.error('Please make sure you have configured your service account key.');
-      process.exit(1);
-    }
-
-    // Resolve the path (in case it's relative)
-    const absoluteCredentialsPath = path.resolve(credentialsPath);
-
-    // Check if the credentials file exists (this will now check the temporary file if created)
-    if (!fs.existsSync(absoluteCredentialsPath)) {
-      console.error(`❌ Service account key file not found at: ${absoluteCredentialsPath}`);
-      console.error('Please make sure the file exists and the path is correct.');
-      process.exit(1);
-    }
-
-    // Validate that it's a JSON file with the expected structure
-    let keyData;
-    try {
-      keyData = JSON.parse(fs.readFileSync(absoluteCredentialsPath, 'utf8'));
-      if (!keyData.type || keyData.type !== 'service_account') {
-        console.error('❌ The file does not appear to be a valid service account key.');
-        process.exit(1);
-      }
-      console.log(`✅ Found valid service account key: ${path.basename(absoluteCredentialsPath)}`);
-      console.log(`📧 Service account email: ${keyData.client_email}`);
-      console.log('✅ Using service account key for authentication');
-    } catch (e) {
-      console.error('❌ The service account key file is not valid JSON or could not be read.');
-      process.exit(1);
-    }
-
-    // Get an access token using the service account
-    console.log('🔑 Obtaining access token from service account...');
-
-    // Create a new GoogleAuth instance with the credentials directly
-    const auth = new GoogleAuth({
-      credentials: keyData,
-      scopes: ['https://www.googleapis.com/auth/cloud-platform']
-    });
-
-    // Get an access token
-    const accessToken = await auth.getAccessToken();
-    if (!accessToken) {
-      throw new Error('Failed to obtain access token - token is null or undefined');
-    }
-    console.log('✅ Successfully obtained access token');
-
-    // Directly attempt to deploy Firebase functions using the access token
-    console.log('🚀 Running Firebase deploy command with access token...'); 
-
-    try {
-      // Run the Firebase deploy command with explicit project ID and access token
-      const deployCommand = `firebase deploy --only functions --project order-flow-bolt --token "${accessToken}"`;
-      console.log(`Executing command: firebase deploy --only functions --project order-flow-bolt --token "********"`);
-      
-      execSync(deployCommand, { 
-        stdio: 'inherit',
-        env: {
-          ...process.env, // Pass all current environment variables
-          GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath // Ensure this is explicitly set for the child process
-        }
-      });
-
-      console.log('\n✅ Firebase deployment completed successfully!');
-    } catch (error) {
-      console.error('\n❌ Firebase deployment failed:', error.message);
-      process.exit(1);
-    }
-  } catch (error) {
-    console.error('❌ Failed to obtain access token:', error.message);
-    if (error.stack) {
-      console.error('Stack trace:', error.stack);
-    }
+  } catch (e) {
+    console.error('❌ Failed to parse FIREBASE_SA_KEY_JSON content as valid JSON:', e.message);
     process.exit(1);
-  } finally {
-    // Clean up the temporary file if we created one
-    if (tempKeyFileCreated && fs.existsSync(credentialsPath)) {
-      try {
-        fs.unlinkSync(credentialsPath);
-        console.log(`🗑️ Cleaned up temporary key file: ${credentialsPath}`);
-      } catch (e) {
-        console.warn(`⚠️ Could not clean up temporary key file: ${credentialsPath} - ${e.message}`);
-      }
-    }
   }
 }
 
-// Execute the main function
-main().catch(error => {
-  console.error('❌ Unhandled error in deployment script:', error);
+if (!credentialsPath) {
+  console.error('❌ Neither GOOGLE_APPLICATION_CREDENTIALS environment variable nor FIREBASE_SA_KEY_JSON content is set.');
+  console.error('Please make sure you have configured your service account key.');
   process.exit(1);
-});
+}
+
+// Resolve the path (in case it's relative)
+const absoluteCredentialsPath = path.resolve(credentialsPath);
+
+// Check if the credentials file exists (this will now check the temporary file if created)
+if (!fs.existsSync(absoluteCredentialsPath)) {
+  console.error(`❌ Service account key file not found at: ${absoluteCredentialsPath}`);
+  console.error('Please make sure the file exists and the path is correct.');
+  process.exit(1);
+}
+
+// Validate that it's a JSON file with the expected structure
+try {
+  const keyData = JSON.parse(fs.readFileSync(absoluteCredentialsPath, 'utf8'));
+  if (!keyData.type || keyData.type !== 'service_account') {
+    console.error('❌ The file does not appear to be a valid service account key.');
+    process.exit(1);
+  }
+  console.log(`✅ Found valid service account key: ${path.basename(absoluteCredentialsPath)}`);
+  console.log(`📧 Service account email: ${keyData.client_email}`);
+  console.log('✅ Using service account key for authentication');
+} catch (e) {
+  console.error('❌ The service account key file is not valid JSON or could not be read.');
+  process.exit(1);
+}
+
+console.log('🚀 Running Firebase projects:list command for diagnostic purposes...'); // Changed for test
+
+try {
+  // Run the Firebase projects:list command with explicit project ID
+  execSync('firebase projects:list --project order-flow-bolt', { // Changed for test
+    stdio: 'inherit',
+    env: {
+      ...process.env, // Pass all current environment variables
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath // Ensure this is explicitly set for the child process
+    }
+  });
+
+  console.log('\n✅ Firebase command completed successfully!'); // Changed for test
+} catch (error) {
+  console.error('\n❌ Firebase command failed:', error.message); // Changed for test
+  process.exit(1);
+} finally {
+  // Clean up the temporary file if we created one
+  if (tempKeyFileCreated && fs.existsSync(absoluteCredentialsPath)) {
+    try {
+      fs.unlinkSync(absoluteCredentialsPath);
+      console.log(`🗑️ Cleaned up temporary key file: ${absoluteCredentialsPath}`);
+    } catch (e) {
+      console.warn(`⚠️ Could not clean up temporary key file: ${absoluteCredentialsPath} - ${e.message}`);
+    }
+  }
+}
