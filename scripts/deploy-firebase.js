@@ -20,7 +20,7 @@ console.log('\n🔥 Firebase Deployment Helper 🔥\n');
 let credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let tempKeyFileCreated = false; // Flag to know if we created a temporary file
 
-// NEW LOGIC: Check for service account JSON directly from an environment variable
+// Check for service account JSON directly from an environment variable
 const serviceAccountJsonContent = process.env.FIREBASE_SA_KEY_JSON;
 
 if (!credentialsPath && serviceAccountJsonContent) {
@@ -48,7 +48,7 @@ if (!credentialsPath && serviceAccountJsonContent) {
 }
 
 if (!credentialsPath) {
-  console.error('❌ Neither GOOGLE_APPLICATION_CREDENTIALS environment variable nor FIREBASE_SA_KEY_JSON content is set.');
+  console.error('❌ No service account key found. GOOGLE_APPLICATION_CREDENTIALS environment variable or FIREBASE_SA_KEY_JSON content must be set.');
   console.error('Please make sure you have configured your service account key.');
   process.exit(1);
 }
