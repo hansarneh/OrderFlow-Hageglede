@@ -20,7 +20,7 @@ console.log('\n🔥 Firebase Deployment Helper 🔥\n');
 let credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 let tempKeyFileCreated = false; // Flag to know if we created a temporary file
 
-// Check for service account JSON directly from an environment variable
+// NEW LOGIC: Check for service account JSON directly from an environment variable
 const serviceAccountJsonContent = process.env.FIREBASE_SA_KEY_JSON;
 
 if (!credentialsPath && serviceAccountJsonContent) {
@@ -64,45 +64,25 @@ if (!fs.existsSync(absoluteCredentialsPath)) {
 }
 
 // Validate that it's a JSON file with the expected structure
-let serviceAccountEmail;
 try {
   const keyData = JSON.parse(fs.readFileSync(absoluteCredentialsPath, 'utf8'));
   if (!keyData.type || keyData.type !== 'service_account') {
     console.error('❌ The file does not appear to be a valid service account key.');
     process.exit(1);
   }
-  serviceAccountEmail = keyData.client_email;
   console.log(`✅ Found valid service account key: ${path.basename(absoluteCredentialsPath)}`);
-  console.log(`📧 Service account email: ${serviceAccountEmail}`);
+  console.log(`📧 Service account email: ${keyData.client_email}`);
   console.log('✅ Using service account key for authentication');
 } catch (e) {
   console.error('❌ The service account key file is not valid JSON or could not be read.');
   process.exit(1);
 }
 
-// Activate the service account using gcloud CLI
-console.log('🔐 Activating service account with gcloud...');
-try {
-  execSync(`gcloud auth activate-service-account ${serviceAccountEmail} --key-file="${absoluteCredentialsPath}"`, {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
-    }
-  });
-  console.log('✅ Service account activated successfully');
-} catch (error) {
-  console.error('❌ Failed to activate service account:', error.message);
-  console.error('Make sure gcloud CLI is installed and accessible in your PATH');
-  process.exit(1);
-}
-
-// Deploy Firebase functions
-console.log('🚀 Deploying Firebase functions...');
+console.log('🚀 Running Firebase projects:list command for diagnostic purposes...'); // Changed for test
 
 try {
-  // Run the Firebase deploy command with explicit project ID
-  execSync('firebase deploy --only functions --project order-flow-bolt', {
+  // Run the Firebase projects:list command with explicit project ID
+  execSync('firebase projects:list --project order-flow-bolt', { // Changed for test
     stdio: 'inherit',
     env: {
       ...process.env, // Pass all current environment variables
@@ -110,9 +90,9 @@ try {
     }
   });
 
-  console.log('\n✅ Firebase functions deployed successfully!');
+  console.log('\n✅ Firebase command completed successfully!'); // Changed for test
 } catch (error) {
-  console.error('\n❌ Firebase deployment failed:', error.message);
+  console.error('\n❌ Firebase command failed:', error.message); // Changed for test
   process.exit(1);
 } finally {
   // Clean up the temporary file if we created one
