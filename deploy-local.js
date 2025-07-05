@@ -55,7 +55,7 @@ console.log('🚀 Running Firebase deploy command...');
 
 try {
   // Run the Firebase deploy command with explicit project ID
-  execSync(`firebase deploy --only functions --project order-flow-bolt --token-bypass --non-interactive`, { 
+  execSync('firebase deploy --only functions --project order-flow-bolt --non-interactive', { 
     stdio: 'inherit',
     env: {
       ...process.env, // Pass all current environment variables
