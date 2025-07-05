@@ -75,7 +75,7 @@ try {
   console.log('🔍 Testing Firebase CLI access...');
   
   // Export the credentials path directly in the command
-  const testCommand = `firebase projects:list --non-interactive`;
+  const testCommand = `echo "GOOGLE_APPLICATION_CREDENTIALS=${absoluteCredentialsPath}" && firebase projects:list --non-interactive`;
   
   console.log(`Running command: ${testCommand}`);
   
@@ -93,6 +93,12 @@ try {
 } catch (error) {
   console.error('\n❌ Firebase authentication failed:', error.message);
   
+  // Check if the environment variable is set in the current process
+  console.error('\n🔍 Environment variable check:');
+  console.error(`GOOGLE_APPLICATION_CREDENTIALS in process.env: ${process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set'}`);
+  console.error(`Using credentials path: ${absoluteCredentialsPath}`);
+  console.error(`File exists: ${fs.existsSync(absoluteCredentialsPath)}`);
+  
   console.error('\n🔍 Authentication troubleshooting:');
   console.error('1. Verify your service account has the following roles in Google Cloud Console:');
   console.error('   - Firebase Admin');
@@ -108,6 +114,28 @@ try {
     const keyData = JSON.parse(keyContent);
     console.error(`\n📧 Service account email: ${keyData.client_email}`);
     console.error(`🆔 Project ID in key: ${keyData.project_id}`);
+    
+    // Try to run a direct Google auth test
+    console.error('\n🔍 Attempting direct Google authentication test...');
+    try {
+      const { GoogleAuth } = await import('google-auth-library');
+      const auth = new GoogleAuth({
+        keyFile: absoluteCredentialsPath,
+        scopes: ['https://www.googleapis.com/auth/cloud-platform']
+      });
+      
+      console.error('GoogleAuth instance created successfully');
+      
+      try {
+        const token = await auth.getAccessToken();
+        console.error(`✅ Successfully obtained Google access token: ${token.substring(0, 10)}...`);
+        console.error('This indicates the service account key is valid for Google Cloud, but may not have Firebase permissions.');
+      } catch (tokenError) {
+        console.error(`❌ Failed to get access token: ${tokenError.message}`);
+      }
+    } catch (authError) {
+      console.error(`❌ Failed to create GoogleAuth instance: ${authError.message}`);
+    }
     
     // Check if the key has the required fields
     const requiredFields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id'];
