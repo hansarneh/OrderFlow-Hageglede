@@ -51,8 +51,17 @@ if (!credentialsPath && serviceAccountJsonContent) {
   }
 }
 
+// Check if we have a service account key file in the project root
 if (!credentialsPath) {
-  console.error('❌ Neither GOOGLE_APPLICATION_CREDENTIALS environment variable nor FIREBASE_SA_KEY_JSON content is set.');
+  const projectKeyFile = 'order-flow-bolt-4ece69eb63c3.json';
+  if (fs.existsSync(projectKeyFile)) {
+    credentialsPath = path.resolve(projectKeyFile);
+    console.log(`💡 Found service account key file in project root: ${projectKeyFile}`);
+  }
+}
+
+if (!credentialsPath) {
+  console.error('❌ No service account credentials found.');
   console.error('Please make sure you have configured your service account key.');
   process.exit(1);
 }
@@ -68,19 +77,40 @@ if (!fs.existsSync(absoluteCredentialsPath)) {
 }
 
 console.log('✅ Using service account key for authentication');
-console.log('🚀 Running Firebase deploy command...');
 
 try {
+  // First, try to activate the service account with gcloud (if available)
+  console.log('🔐 Activating service account...');
+  try {
+    execSync(`gcloud auth activate-service-account --key-file="${absoluteCredentialsPath}" --project=order-flow-bolt`, { 
+      stdio: 'pipe'
+    });
+    console.log('✅ Service account activated successfully');
+  } catch (gcloudError) {
+    console.log('⚠️ gcloud not available or failed, proceeding with Firebase CLI authentication...');
+  }
+
   // Set up environment for Firebase CLI
   const deployEnv = {
     ...process.env,
     GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath,
-    // Explicitly set Firebase project
     FIREBASE_PROJECT: 'order-flow-bolt'
   };
 
-  // Run the Firebase deploy command
-  execSync('firebase deploy --only functions --project order-flow-bolt --non-interactive', { 
+  console.log('🚀 Running Firebase deploy command...');
+
+  // Try using the service account token directly with Firebase CLI
+  try {
+    execSync('firebase use order-flow-bolt --token "$(gcloud auth print-access-token)" 2>/dev/null || firebase use order-flow-bolt', { 
+      stdio: 'pipe',
+      env: deployEnv
+    });
+  } catch (useError) {
+    console.log('⚠️ Could not set Firebase project with token, proceeding...');
+  }
+
+  // Run the Firebase deploy command with enhanced authentication
+  execSync('firebase deploy --only functions --project order-flow-bolt --non-interactive --force', { 
     stdio: 'inherit',
     env: deployEnv
   });
@@ -90,13 +120,29 @@ try {
   console.error('\n❌ Firebase deployment failed:', error.message);
   
   // Provide more helpful error messages
-  if (error.message.includes('Failed to authenticate')) {
+  if (error.message.includes('Failed to authenticate') || error.message.includes('authentication')) {
     console.error('\n🔍 Authentication troubleshooting:');
     console.error('1. Verify your service account has the following roles in Google Cloud Console:');
-    console.error('   - Firebase Admin (or)');
+    console.error('   - Firebase Admin (recommended) OR');
     console.error('   - Cloud Functions Admin + Service Account User + Firebase Rules Admin');
     console.error('2. Ensure the service account key JSON is complete and valid');
     console.error('3. Check that the Firebase project ID "order-flow-bolt" is correct');
+    console.error('4. Try running: gcloud auth activate-service-account --key-file=order-flow-bolt-4ece69eb63c3.json');
+    console.error('5. Verify the service account has access to the Firebase project');
+    
+    // Try to provide more specific guidance
+    try {
+      const keyContent = fs.readFileSync(absoluteCredentialsPath, 'utf8');
+      const keyData = JSON.parse(keyContent);
+      console.error(`\n📧 Service account email: ${keyData.client_email}`);
+      console.error(`🆔 Project ID in key: ${keyData.project_id}`);
+      
+      if (keyData.project_id !== 'order-flow-bolt') {
+        console.error('⚠️ WARNING: Project ID in service account key does not match target project!');
+      }
+    } catch (e) {
+      console.error('Could not read service account details for debugging');
+    }
   }
   
   process.exit(1);
