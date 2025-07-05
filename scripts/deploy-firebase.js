@@ -86,7 +86,7 @@ try {
   console.log('File size:', fs.statSync(absoluteCredentialsPath).size, 'bytes');
   
   // Export the credentials path directly in the command to ensure it's available
-  const deployCommand = `firebase deploy --only functions --project order-flow-bolt --non-interactive`;
+  const deployCommand = `npx firebase deploy --only functions --project order-flow-bolt --non-interactive`;
   
   // Run the Firebase deploy command
   execSync(deployCommand, { 
