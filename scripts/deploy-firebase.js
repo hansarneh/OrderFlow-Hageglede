@@ -79,15 +79,6 @@ try {
     FIREBASE_PROJECT: 'order-flow-bolt'
   };
 
-  // First, authenticate using the service account
-  console.log('🔐 Authenticating with service account...');
-  execSync(`firebase auth:login --service-account "${absoluteCredentialsPath}"`, { 
-    stdio: 'inherit',
-    env: deployEnv
-  });
-
-  console.log('✅ Authentication successful! Now attempting deployment...');
-  
   // Run the Firebase deploy command
   execSync('firebase deploy --only functions --project order-flow-bolt --non-interactive', { 
     stdio: 'inherit',
