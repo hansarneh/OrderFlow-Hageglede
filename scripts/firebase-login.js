@@ -72,30 +72,67 @@ if (!fs.existsSync(absoluteCredentialsPath)) {
 console.log('✅ Using service account key for authentication');
 
 try {
+  // First, test Google Cloud authentication directly
+  console.log('🔍 Testing Google Cloud authentication...');
+  
+  try {
+    const auth = new GoogleAuth({
+      keyFile: absoluteCredentialsPath,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform']
+    });
+    
+    const token = await auth.getAccessToken();
+    console.log(`✅ Successfully obtained Google access token`);
+    
+    // Get project ID from the auth client
+    const projectId = await auth.getProjectId();
+    console.log(`✅ Authenticated for project: ${projectId}`);
+    
+  } catch (authError) {
+    console.error(`❌ Google Cloud authentication failed: ${authError.message}`);
+    throw authError;
+  }
+
   // Test Firebase CLI access with the service account
   console.log('🔍 Testing Firebase CLI access...');
   
-  // Export the credentials path directly in the command
-  const testCommand = process.platform === 'win32' 
-    ? `set GOOGLE_APPLICATION_CREDENTIALS=${absoluteCredentialsPath} && npx firebase projects:list --non-interactive`
-    : `GOOGLE_APPLICATION_CREDENTIALS=${absoluteCredentialsPath} npx firebase projects:list --non-interactive`;
+  // Set environment variable and test Firebase CLI
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = absoluteCredentialsPath;
   
-  console.log(`Running command: ${testCommand}`);
-  
-  const result = execSync(testCommand, {
-    stdio: 'pipe',
-    shell: true
-  });
-  
-  console.log('\n✅ Authentication successful! Firebase projects:');
-  console.log(result.toString());
+  try {
+    const result = execSync('npx firebase projects:list --non-interactive', {
+      stdio: 'pipe',
+      shell: true,
+      env: {
+        ...process.env,
+        GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
+      },
+      timeout: 30000 // 30 second timeout
+    });
+    
+    console.log('\n✅ Firebase CLI authentication successful! Firebase projects:');
+    console.log(result.toString());
+    
+  } catch (firebaseError) {
+    console.error('\n❌ Firebase CLI authentication failed');
+    
+    // Try to get more specific error information
+    if (firebaseError.stderr) {
+      console.error('Error output:', firebaseError.stderr.toString());
+    }
+    if (firebaseError.stdout) {
+      console.error('Standard output:', firebaseError.stdout.toString());
+    }
+    
+    throw firebaseError;
+  }
   
 } catch (error) {
-  console.error('\n❌ Firebase authentication failed:', error.message);
+  console.error('\n❌ Authentication test failed:', error.message);
   
   // Check if the environment variable is set in the current process
   console.error('\n🔍 Environment variable check:');
-  console.error(`GOOGLE_APPLICATION_CREDENTIALS in process.env: ${process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set'}`);
+  console.error(`GOOGLE_APPLICATION_CREDENTIALS: ${process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set'}`);
   console.error(`Using credentials path: ${absoluteCredentialsPath}`);
   console.error(`File exists: ${fs.existsSync(absoluteCredentialsPath)}`);
   
@@ -104,9 +141,11 @@ try {
   console.error('   - Firebase Admin');
   console.error('   - Service Account User');
   console.error('   - Cloud Functions Admin');
+  console.error('   - Firebase Service Management Service Agent');
   console.error('2. Ensure the service account key JSON is complete and valid');
   console.error('3. Check that the Firebase project ID is correct');
   console.error('4. Verify the service account has access to the Firebase project');
+  console.error('5. Make sure Firebase is enabled for your Google Cloud project');
   
   // Try to provide more specific guidance
   try {
@@ -115,36 +154,25 @@ try {
     console.error(`\n📧 Service account email: ${keyData.client_email}`);
     console.error(`🆔 Project ID in key: ${keyData.project_id}`);
     
-    // Try to run a direct Google auth test
-    console.error('\n🔍 Attempting direct Google authentication test...');
-    try {
-      const auth = new GoogleAuth({
-        keyFile: absoluteCredentialsPath,
-        scopes: ['https://www.googleapis.com/auth/cloud-platform']
-      });
-      
-      console.error('GoogleAuth instance created successfully');
-      
-      try {
-        const token = await auth.getAccessToken();
-        console.error(`✅ Successfully obtained Google access token: ${token.substring(0, 10)}...`);
-        console.error('This indicates the service account key is valid for Google Cloud, but may not have Firebase permissions.');
-      } catch (tokenError) {
-        console.error(`❌ Failed to get access token: ${tokenError.message}`);
-      }
-    } catch (authError) {
-      console.error(`❌ Failed to create GoogleAuth instance: ${authError.message}`);
-    }
-    
     // Check if the key has the required fields
     const requiredFields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id'];
     const missingFields = requiredFields.filter(field => !keyData[field]);
     if (missingFields.length > 0) {
       console.error(`⚠️ WARNING: Service account key is missing required fields: ${missingFields.join(', ')}`);
+    } else {
+      console.error('✅ Service account key contains all required fields');
     }
   } catch (e) {
     console.error('Could not read service account details for debugging');
   }
+  
+  console.error('\n📋 Next steps to resolve:');
+  console.error('1. Go to Google Cloud Console (https://console.cloud.google.com)');
+  console.error('2. Navigate to IAM & Admin > IAM');
+  console.error('3. Find your service account: ha-152@order-flow-bolt.iam.gserviceaccount.com');
+  console.error('4. Click "Edit" and add the required roles listed above');
+  console.error('5. Save changes and wait a few minutes for permissions to propagate');
+  console.error('6. Run this script again to test authentication');
   
   process.exit(1);
 } finally {
