@@ -10,6 +10,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import os from 'os';
+import { GoogleAuth } from 'google-auth-library';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -117,7 +118,6 @@ try {
     // Try to run a direct Google auth test
     console.error('\n🔍 Attempting direct Google authentication test...');
     try {
-      const { GoogleAuth } = await import('google-auth-library');
       const auth = new GoogleAuth({
         keyFile: absoluteCredentialsPath,
         scopes: ['https://www.googleapis.com/auth/cloud-platform']
