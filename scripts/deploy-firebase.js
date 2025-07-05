@@ -79,8 +79,23 @@ try {
 }
 
 console.log('🚀 Running Firebase deploy command...'); 
+console.log('GOOGLE_APPLICATION_CREDENTIALS:', absoluteCredentialsPath);
+console.log('Checking if file exists:', fs.existsSync(absoluteCredentialsPath));
+console.log('File size:', fs.statSync(absoluteCredentialsPath).size, 'bytes');
 
 try {
+  // First, try a simpler command to test authentication
+  console.log('Testing authentication with a simpler command...');
+  execSync('firebase projects:list --non-interactive', { 
+    stdio: 'inherit',
+    env: {
+      ...process.env, // Pass all current environment variables
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath // Ensure this is explicitly set for the child process
+    }
+  });
+  
+  console.log('✅ Authentication successful! Now attempting deployment...');
+  
   // Run the Firebase deploy command with explicit project ID and token authentication
   execSync('firebase deploy --only functions --project order-flow-bolt --non-interactive', { 
     stdio: 'inherit',
@@ -93,6 +108,8 @@ try {
   console.log('\n✅ Firebase deployment completed successfully!'); 
 } catch (error) {
   console.error('\n❌ Firebase deployment failed:', error.message); 
+  console.error('Command output:', error.stdout?.toString() || 'No stdout');
+  console.error('Command error output:', error.stderr?.toString() || 'No stderr');
   process.exit(1);
 } finally {
   // Clean up the temporary file if we created one
