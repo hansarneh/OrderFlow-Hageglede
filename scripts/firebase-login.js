@@ -75,16 +75,15 @@ try {
   console.log('🔍 Testing Firebase CLI access...');
   
   // Export the credentials path directly in the command
-  const testCommand = `npx firebase projects:list --non-interactive`;
+  const testCommand = process.platform === 'win32' 
+    ? `set GOOGLE_APPLICATION_CREDENTIALS=${absoluteCredentialsPath} && npx firebase projects:list --non-interactive`
+    : `GOOGLE_APPLICATION_CREDENTIALS=${absoluteCredentialsPath} npx firebase projects:list --non-interactive`;
   
   console.log(`Running command: ${testCommand}`);
   
-  const result = execSync(testCommand, { 
+  const result = execSync(testCommand, {
     stdio: 'pipe',
-    env: {
-      ...process.env,
-      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
-    }
+    shell: true
   });
   
   console.log('\n✅ Authentication successful! Firebase projects:');
