@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "firebase:deploy": "node scripts/deploy-firebase.js",
+    "firebase:login": "node scripts/firebase-login.js",
     "firebase:setup": "node scripts/setup-firebase.js",
     "firebase:init": "firebase init",
     "test:auth": "node test-auth-minimal.js"

@@ -11,6 +11,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import os from 'os';
+import { readFileSync } from 'fs';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -79,40 +80,21 @@ if (!fs.existsSync(absoluteCredentialsPath)) {
 console.log('✅ Using service account key for authentication');
 
 try {
-  // First, try to activate the service account with gcloud (if available)
-  console.log('🔐 Activating service account...');
-  try {
-    execSync(`gcloud auth activate-service-account --key-file="${absoluteCredentialsPath}" --project=order-flow-bolt`, { 
-      stdio: 'pipe'
-    });
-    console.log('✅ Service account activated successfully');
-  } catch (gcloudError) {
-    console.log('⚠️ gcloud not available or failed, proceeding with Firebase CLI authentication...');
-  }
-
-  // Set up environment for Firebase CLI
-  const deployEnv = {
-    ...process.env,
-    GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath,
-    FIREBASE_PROJECT: 'order-flow-bolt'
-  };
-
   console.log('🚀 Running Firebase deploy command...');
-
-  // Try using the service account token directly with Firebase CLI
-  try {
-    execSync('firebase use order-flow-bolt --token "$(gcloud auth print-access-token)" 2>/dev/null || firebase use order-flow-bolt', { 
-      stdio: 'pipe',
-      env: deployEnv
-    });
-  } catch (useError) {
-    console.log('⚠️ Could not set Firebase project with token, proceeding...');
-  }
-
-  // Run the Firebase deploy command with enhanced authentication
-  execSync('firebase deploy --only functions --project order-flow-bolt --non-interactive --force', { 
+  console.log('GOOGLE_APPLICATION_CREDENTIALS:', absoluteCredentialsPath);
+  console.log('Checking if file exists:', fs.existsSync(absoluteCredentialsPath));
+  console.log('File size:', fs.statSync(absoluteCredentialsPath).size, 'bytes');
+  
+  // Export the credentials path directly in the command to ensure it's available
+  const deployCommand = `export GOOGLE_APPLICATION_CREDENTIALS="${absoluteCredentialsPath}" && firebase deploy --only functions --project order-flow-bolt --non-interactive`;
+  
+  // Run the Firebase deploy command
+  execSync(deployCommand, { 
     stdio: 'inherit',
-    env: deployEnv
+    env: {
+      ...process.env,
+      GOOGLE_APPLICATION_CREDENTIALS: absoluteCredentialsPath
+    }
   });
 
   console.log('\n✅ Firebase deployment completed successfully!'); 
@@ -123,12 +105,13 @@ try {
   if (error.message.includes('Failed to authenticate') || error.message.includes('authentication')) {
     console.error('\n🔍 Authentication troubleshooting:');
     console.error('1. Verify your service account has the following roles in Google Cloud Console:');
-    console.error('   - Firebase Admin (recommended) OR');
-    console.error('   - Cloud Functions Admin + Service Account User + Firebase Rules Admin');
+    console.error('   - Firebase Admin');
+    console.error('   - Service Account User');
+    console.error('   - Cloud Functions Admin');
     console.error('2. Ensure the service account key JSON is complete and valid');
     console.error('3. Check that the Firebase project ID "order-flow-bolt" is correct');
-    console.error('4. Try running: gcloud auth activate-service-account --key-file=order-flow-bolt-4ece69eb63c3.json');
-    console.error('5. Verify the service account has access to the Firebase project');
+    console.error('4. Verify the service account has access to the Firebase project');
+    console.error('5. Try running the deployment from your local machine using deploy-local.js');
     
     // Try to provide more specific guidance
     try {
@@ -136,9 +119,17 @@ try {
       const keyData = JSON.parse(keyContent);
       console.error(`\n📧 Service account email: ${keyData.client_email}`);
       console.error(`🆔 Project ID in key: ${keyData.project_id}`);
+      console.error(`🔑 Private key length: ${keyData.private_key ? keyData.private_key.length : 'missing'} characters`);
       
       if (keyData.project_id !== 'order-flow-bolt') {
         console.error('⚠️ WARNING: Project ID in service account key does not match target project!');
+      }
+      
+      // Check if the key has the required fields
+      const requiredFields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id'];
+      const missingFields = requiredFields.filter(field => !keyData[field]);
+      if (missingFields.length > 0) {
+        console.error(`⚠️ WARNING: Service account key is missing required fields: ${missingFields.join(', ')}`);
       }
     } catch (e) {
       console.error('Could not read service account details for debugging');
