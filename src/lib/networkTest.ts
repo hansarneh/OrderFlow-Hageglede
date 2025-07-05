@@ -25,7 +25,7 @@ export async function testFirebaseConnectivity(projectId: string = 'order-flow-b
     'Google APIs': `https://www.googleapis.com/discovery/v1/apis`,
     'Firebase API': `https://firebase.googleapis.com/v1beta1/projects/${projectId}`,
     'Firestore API': `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`,
-    'Cloud Functions': `https://cloudfunctions.googleapis.com/v1/projects/${projectId}/locations/-/functions`,
+    'Cloud Functions': `https://cloudfunctions.googleapis.com/`,
     'Public Internet': 'https://www.cloudflare.com/cdn-cgi/trace' // Public endpoint to test general internet connectivity
   };
   
@@ -44,6 +44,7 @@ export async function testFirebaseConnectivity(projectId: string = 'order-flow-b
         signal: controller.signal,
         // Don't send credentials to avoid CORS issues
         credentials: 'omit',
+        mode: 'no-cors', // Allow cross-origin requests without CORS preflight
         // Set a user agent to avoid being blocked
         headers: {
           'User-Agent': 'LogiFlow-ConnectivityTest/1.0'
@@ -52,12 +53,11 @@ export async function testFirebaseConnectivity(projectId: string = 'order-flow-b
       
       clearTimeout(timeoutId);
       
-      // Even a 401/403 response means the endpoint is reachable
+      // With no-cors mode, we can't read the response status, but if we get here without error, the endpoint is reachable
       results[name] = true;
-      console.log(`✅ ${name} endpoint is reachable (${response.status})`);
+      console.log(`✅ ${name} endpoint is reachable`);
     } catch (error) {
       results[name] = false;
-      overallSuccess = false;
       
       // Provide detailed error information
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
@@ -75,16 +75,25 @@ export async function testFirebaseConnectivity(projectId: string = 'order-flow-b
   // Wait for all tests to complete
   await Promise.all(testPromises);
   
+  // Calculate success based on critical endpoints
+  const criticalEndpoints = ['Public Internet', 'Google APIs'];
+  const criticalSuccess = criticalEndpoints.every(endpoint => results[endpoint]);
+  overallSuccess = criticalSuccess;
+  
   // Determine overall message
   let message = '';
   if (overallSuccess) {
-    message = 'All Firebase endpoints are reachable. Network connectivity looks good.';
+    const reachableCount = Object.values(results).filter(Boolean).length;
+    const totalCount = Object.keys(results).length;
+    message = `Network connectivity looks good. ${reachableCount}/${totalCount} endpoints are reachable.`;
   } else if (results['Public Internet'] && !results['Google Auth']) {
     message = 'General internet connectivity works, but Firebase/Google Cloud endpoints are unreachable. This suggests a firewall or proxy issue specifically blocking Google services.';
   } else if (!results['Public Internet']) {
     message = 'Unable to reach any external endpoints. This suggests a complete network connectivity issue.';
   } else {
-    message = 'Some Firebase endpoints are unreachable. This may cause authentication or deployment issues.';
+    const reachableCount = Object.values(results).filter(Boolean).length;
+    const totalCount = Object.keys(results).length;
+    message = `Limited connectivity detected. ${reachableCount}/${totalCount} endpoints are reachable. Some Firebase features may not work properly.`;
   }
   
   return {
@@ -117,6 +126,7 @@ export async function testUrlConnectivity(url: string, timeout: number = 5000): 
       method: 'HEAD',
       signal: controller.signal,
       credentials: 'omit',
+      mode: 'no-cors',
       headers: {
         'User-Agent': 'LogiFlow-ConnectivityTest/1.0'
       }
@@ -125,8 +135,7 @@ export async function testUrlConnectivity(url: string, timeout: number = 5000): 
     clearTimeout(timeoutId);
     
     return {
-      success: true,
-      status: response.status
+      success: true
     };
   } catch (error) {
     let errorMessage = 'Unknown error';
