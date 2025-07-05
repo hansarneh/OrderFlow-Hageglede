@@ -1,12 +1,41 @@
 import React, { useState } from 'react';
-import { LogIn, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { LogIn, Mail, Lock, AlertCircle, Loader2, Wifi, WifiOff, Globe } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { testFirebaseConnectivity } from '../lib/networkTest';
 
 const LoginForm: React.FC = () => {
   const [email, setEmail] = useState('admin@logistics.com');
   const [password, setPassword] = useState('password');
   const [error, setError] = useState('');
+  const [isTestingConnectivity, setIsTestingConnectivity] = useState(false);
+  const [connectivityStatus, setConnectivityStatus] = useState<{
+    success?: boolean;
+    message?: string;
+    details?: any;
+  }>({});
   const { login, isLoading } = useAuth();
+
+  // Test Firebase connectivity when component mounts
+  React.useEffect(() => {
+    const checkConnectivity = async () => {
+      setIsTestingConnectivity(true);
+      try {
+        const result = await testFirebaseConnectivity();
+        setConnectivityStatus(result);
+        console.log('Connectivity test result:', result);
+      } catch (err) {
+        console.error('Error testing connectivity:', err);
+        setConnectivityStatus({
+          success: false,
+          message: 'Error testing connectivity: ' + (err.message || 'Unknown error')
+        });
+      } finally {
+        setIsTestingConnectivity(false);
+      }
+    };
+
+    checkConnectivity();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +96,34 @@ const LoginForm: React.FC = () => {
               </div>
             </div>
 
+            {/* Connectivity Status */}
+            {(isTestingConnectivity || connectivityStatus.message) && (
+              <div className={`flex items-center space-x-2 p-3 rounded-lg ${
+                isTestingConnectivity 
+                  ? 'bg-blue-50 text-blue-600' 
+                  : connectivityStatus.success 
+                    ? 'bg-green-50 text-green-600'
+                    : 'bg-yellow-50 text-yellow-600'
+              }`}>
+                {isTestingConnectivity ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-sm">Testing network connectivity...</span>
+                  </>
+                ) : connectivityStatus.success ? (
+                  <>
+                    <Wifi className="w-5 h-5" />
+                    <span className="text-sm">{connectivityStatus.message}</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-5 h-5" />
+                    <span className="text-sm">{connectivityStatus.message}</span>
+                  </>
+                )}
+              </div>
+            )}
+
             {error && (
               <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg">
                 <AlertCircle className="w-5 h-5" />
@@ -76,7 +133,7 @@ const LoginForm: React.FC = () => {
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || isTestingConnectivity}
               className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 font-medium flex items-center justify-center space-x-2 disabled:opacity-50"
             >
               {isLoading ? (
@@ -101,6 +158,35 @@ const LoginForm: React.FC = () => {
               <div>Operator: operator@logistics.com / password</div>
             </div>
           </div>
+          
+          {/* Network Diagnostics */}
+          {!connectivityStatus.success && connectivityStatus.details && (
+            <div className="mt-6 border-t border-gray-200 pt-6">
+              <div className="text-sm font-medium text-gray-700 mb-2">Network Diagnostics:</div>
+              <div className="text-xs text-gray-600 space-y-1">
+                {Object.entries(connectivityStatus.details.endpoints || {}).map(([endpoint, reachable]) => (
+                  <div key={endpoint} className="flex items-center space-x-2">
+                    {reachable ? (
+                      <Wifi className="w-3 h-3 text-green-500" />
+                    ) : (
+                      <WifiOff className="w-3 h-3 text-red-500" />
+                    )}
+                    <span>{endpoint}: {reachable ? 'Reachable' : 'Unreachable'}</span>
+                  </div>
+                ))}
+                
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                  >
+                    Retry Connectivity Test
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
