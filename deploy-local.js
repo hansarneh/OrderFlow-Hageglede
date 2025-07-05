@@ -5,11 +5,16 @@
  * It's designed to be run from a local terminal outside of bolt.new.
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
 console.log('\n🔥 Firebase Local Deployment Helper 🔥\n');
+
+// Get the directory name in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Check if service account key file path is provided as argument
 const args = process.argv.slice(2);
