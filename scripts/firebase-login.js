@@ -75,7 +75,7 @@ try {
   console.log('🔍 Testing Firebase CLI access...');
   
   // Export the credentials path directly in the command
-  const testCommand = `export GOOGLE_APPLICATION_CREDENTIALS="${absoluteCredentialsPath}" && firebase projects:list --non-interactive`;
+  const testCommand = `firebase projects:list --non-interactive`;
   
   console.log(`Running command: ${testCommand}`);
   
