@@ -197,28 +197,35 @@ const CustomerOrdersTab: React.FC = () => {
     try {
       console.log('Syncing orders from Ongoing WMS...');
 
-      // Get order statuses first to show available options
-      const getOrderStatuses = httpsCallable(functions, 'getOngoingOrderStatuses');
-      const statusesResult = await getOrderStatuses({});
-      const statusesData = statusesResult.data as any;
-
-      if (statusesData.error) {
-        throw new Error(statusesData.error);
-      }
-
-      console.log('Available order statuses:', statusesData.statuses);
-
-      // Sync orders with common statuses
-      const commonStatuses = [200, 210, 300, 320, 400, 450, 451, 500, 600]; // Open, On Hold, Picking, etc.
+      // Define statuses to sync (excluding fulfilled/completed orders)
+      // Based on Ongoing WMS documentation, these are the active statuses:
+      const activeStatuses = [
+        200, // Open
+        210, // On Hold  
+        300, // Picking
+        320, // Assigned
+        400, // Picked
+        450, // Sent
+        451  // Partially Sent
+      ];
+      
+      // Exclude fulfilled statuses (these are completed orders we don't need):
+      // 500 - Collected (fulfilled)
+      // 600 - Waiting for customer (fulfilled)
+      
       let totalSynced = 0;
       let totalErrors = 0;
+      const maxOrdersPerStatus = 100; // Limit to prevent overwhelming the system
 
-      for (const status of commonStatuses) {
+      for (const status of activeStatuses) {
         try {
-          console.log(`Syncing orders with status ${status}...`);
+          console.log(`Syncing orders with status ${status} (max ${maxOrdersPerStatus})...`);
           
           const syncOrders = httpsCallable(functions, 'syncOngoingOrdersByStatus');
-          const result = await syncOrders({ status, limit: 50 });
+          const result = await syncOrders({ 
+            status, 
+            limit: maxOrdersPerStatus 
+          });
           
           const data = result.data as any;
 
@@ -238,7 +245,7 @@ const CustomerOrdersTab: React.FC = () => {
       console.log(`Ongoing WMS sync completed. Total synced: ${totalSynced}, Errors: ${totalErrors}`);
       
       // Show success message with details
-      const message = `Ongoing WMS sync completed!\n\nDetails:\n- Orders Synced: ${totalSynced}\n- Errors: ${totalErrors}\n- Statuses checked: ${commonStatuses.join(', ')}`;
+      const message = `Ongoing WMS sync completed!\n\nDetails:\n- Orders Synced: ${totalSynced}\n- Errors: ${totalErrors}\n- Statuses synced: ${activeStatuses.join(', ')}\n- Max orders per status: ${maxOrdersPerStatus}\n\nNote: Only active orders (not fulfilled) were synced.`;
       alert(message);
 
       // Reload orders from database after sync
@@ -677,6 +684,8 @@ const CustomerOrdersTab: React.FC = () => {
                 : `Sync ${activeTab === 'combined' ? 'All Sources' : activeTab === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}`
               }
             </span>
+            {/* Debug info */}
+            <span className="text-xs text-gray-400">(Tab: {activeTab})</span>
           </button>
           
           <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2">
