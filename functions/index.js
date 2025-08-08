@@ -1062,7 +1062,7 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { status, goodsOwnerId = 85, limit = 100 } = data;
+    const { status, goodsOwnerId = 85, limit = 50 } = data;
 
     if (!status) {
       throw new functions.https.HttpsError('invalid-argument', 'Status is required');
@@ -1070,18 +1070,17 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
 
     const { authHeader, baseUrl } = await getOngoingWMSCredentials();
 
-    console.log(`Syncing orders with status: ${status}, goodsOwnerId: ${goodsOwnerId}`);
+    console.log(`Syncing orders with status: ${status}, goodsOwnerId: ${goodsOwnerId}, limit: ${limit}`);
 
-    // Since we can't list all orders directly, we'll need to use a different approach
-    // For now, we'll fetch orders by testing a range of order IDs
-    const orderIds = [];
+    // For now, we'll use a more efficient approach - test only recent order IDs
+    // This is a temporary solution until we find a better way to list orders by status
     const syncedOrders = [];
     const errors = [];
-
-    // Test a range of order IDs (you can adjust this range)
-    const startOrderId = 214000;
+    
+    // Test recent order IDs (last 1000 orders)
+    const startOrderId = 216000; // Recent orders
     const endOrderId = 217000;
-    const batchSize = 10;
+    const batchSize = 5; // Smaller batches to avoid timeouts
 
     for (let i = startOrderId; i <= endOrderId && syncedOrders.length < limit; i += batchSize) {
       const batch = [];
@@ -1089,10 +1088,13 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
         batch.push(i + j);
       }
 
-      // Fetch orders in parallel
+      // Fetch orders in parallel with timeout
       const promises = batch.map(async (orderId) => {
         try {
           const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
           
           const response = await fetch(apiUrl, {
             method: 'GET',
@@ -1100,8 +1102,11 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
               'Authorization': authHeader,
               'Content-Type': 'application/json',
               'User-Agent': 'LogiFlow/1.0'
-            }
+            },
+            signal: controller.signal
           });
+
+          clearTimeout(timeoutId);
 
           if (response.ok) {
             const order = await response.json();
@@ -1151,17 +1156,25 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
               
               console.log(`Synced order ${orderId} (${order.orderInfo.orderNumber}) with ${order.orderLines?.length || 0} order lines`);
             }
+          } else if (response.status === 404) {
+            // Order doesn't exist, skip silently
+            console.log(`Order ${orderId} not found, skipping`);
           }
         } catch (error) {
-          console.error(`Error fetching order ${orderId}:`, error.message);
-          errors.push({ orderId, error: error.message });
+          if (error.name === 'AbortError') {
+            console.log(`Timeout fetching order ${orderId}`);
+            errors.push({ orderId, error: 'Request timeout' });
+          } else {
+            console.error(`Error fetching order ${orderId}:`, error.message);
+            errors.push({ orderId, error: error.message });
+          }
         }
       });
 
       await Promise.all(promises);
       
       // Small delay to avoid overwhelming the API
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
 
     console.log(`Sync completed. Synced ${syncedOrders.length} orders, ${errors.length} errors`);

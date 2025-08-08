@@ -215,7 +215,7 @@ const CustomerOrdersTab: React.FC = () => {
       
       let totalSynced = 0;
       let totalErrors = 0;
-      const maxOrdersPerStatus = 100; // Limit to prevent overwhelming the system
+      const maxOrdersPerStatus = 20; // Reduced limit to prevent timeouts
 
       for (const status of activeStatuses) {
         try {
@@ -245,7 +245,7 @@ const CustomerOrdersTab: React.FC = () => {
       console.log(`Ongoing WMS sync completed. Total synced: ${totalSynced}, Errors: ${totalErrors}`);
       
       // Show success message with details
-      const message = `Ongoing WMS sync completed!\n\nDetails:\n- Orders Synced: ${totalSynced}\n- Errors: ${totalErrors}\n- Statuses synced: ${activeStatuses.join(', ')}\n- Max orders per status: ${maxOrdersPerStatus}\n\nNote: Only active orders (not fulfilled) were synced.`;
+      const message = `Ongoing WMS sync completed!\n\nDetails:\n- Orders Synced: ${totalSynced}\n- Errors: ${totalErrors}\n- Statuses synced: ${activeStatuses.join(', ')}\n- Max orders per status: ${maxOrdersPerStatus}\n\nNote: Only active orders (not fulfilled) were synced.\n\nNote: This is a test sync with limited range. For production, we need a better way to list orders by status.`;
       alert(message);
 
       // Reload orders from database after sync
