@@ -29,6 +29,8 @@ import OrderDetailsModal from './CustomerOrders/OrderDetailsModal';
 // Union type for both order types
 type OrderData = CustomerOrder | OngoingOrder;
 
+type OrderSource = 'woocommerce' | 'ongoing_wms' | 'combined';
+
 const CustomerOrdersTab: React.FC = () => {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,7 +44,7 @@ const CustomerOrdersTab: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<OrderData | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [isLoadingLines, setIsLoadingLines] = useState(false);
-  const [syncSource, setSyncSource] = useState<'woocommerce' | 'ongoing_wms'>('ongoing_wms');
+  const [activeTab, setActiveTab] = useState<OrderSource>('ongoing_wms');
 
   // Load orders from Firestore database without order lines
   const loadOrdersFromDatabase = async () => {
@@ -56,16 +58,26 @@ const CustomerOrdersTab: React.FC = () => {
       
       let orders: OrderData[] = [];
       
-      if (syncSource === 'woocommerce') {
+      if (activeTab === 'woocommerce') {
         const wooOrders = await getCustomerOrders(statusFilter);
         orders = wooOrders;
-      } else {
+        console.log(`Loaded ${orders.length} WooCommerce orders`);
+      } else if (activeTab === 'ongoing_wms') {
         const ongoingOrders = await getOngoingOrders(statusFilter);
         orders = ongoingOrders;
+        console.log(`Loaded ${orders.length} Ongoing WMS orders`);
+      } else if (activeTab === 'combined') {
+        // Load both types of orders for combined view
+        const [wooOrders, ongoingOrders] = await Promise.all([
+          getCustomerOrders(statusFilter),
+          getOngoingOrders(statusFilter)
+        ]);
+        orders = [...wooOrders, ...ongoingOrders];
+        console.log(`Loaded ${wooOrders.length} WooCommerce + ${ongoingOrders.length} Ongoing WMS orders = ${orders.length} total`);
       }
       
       setCustomerOrders(orders);
-      console.log(`Loaded ${orders.length} orders from database (${syncSource})`);
+      console.log(`Loaded ${orders.length} orders from database (${activeTab})`);
     } catch (err: any) {
       console.error('Error loading orders from database:', err);
       setError(err.message || 'Failed to load orders from database');
@@ -251,13 +263,13 @@ const CustomerOrdersTab: React.FC = () => {
     }
   };
 
-  // Load orders from database on component mount and when sync source changes
+  // Load orders from database on component mount and when active tab changes
   useEffect(() => {
     loadOrdersFromDatabase();
-  }, [syncSource]);
+  }, [activeTab]);
 
   const getStatusCounts = () => {
-    if (syncSource === 'woocommerce') {
+    if (activeTab === 'woocommerce') {
       const processing = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'processing').length;
       const delvisLevert = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'delvis-levert').length;
       const onHold = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'on-hold').length;
@@ -273,11 +285,11 @@ const CustomerOrdersTab: React.FC = () => {
         'pending': pending,
         'completed': completed
       };
-    } else {
-      // Ongoing WMS status counts
-      const open = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 200).length;
-      const onHold = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 210).length;
-      const picking = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 300).length;
+    } else if (activeTab === 'ongoing_wms') {
+              // Ongoing WMS status counts
+        const open = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 200).length;
+        const onHold = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 210).length;
+        const picking = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 300).length;
       const assigned = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 320).length;
       const picked = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 400).length;
       const sent = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 450).length;
@@ -291,6 +303,16 @@ const CustomerOrdersTab: React.FC = () => {
         'assigned': assigned,
         'picked': picked,
         'sent': sent
+      };
+    } else {
+      // Combined view - show counts for both sources
+      const wooOrders = customerOrders.filter(o => 'wooStatus' in o);
+      const ongoingOrders = customerOrders.filter(o => 'ongoingStatus' in o);
+      
+      return {
+        'woocommerce': wooOrders.length,
+        'ongoing_wms': ongoingOrders.length,
+        'total': customerOrders.length
       };
     }
   };
@@ -326,7 +348,7 @@ const CustomerOrdersTab: React.FC = () => {
   };
 
   const getStatusColor = (status: string | number) => {
-    if (syncSource === 'woocommerce') {
+    if (activeTab === 'woocommerce') {
       switch (status) {
         case 'processing':
         case 'delvis-levert':
@@ -340,7 +362,7 @@ const CustomerOrdersTab: React.FC = () => {
         default:
           return 'text-gray-700 bg-gray-100';
       }
-    } else {
+    } else if (activeTab === 'ongoing_wms') {
       // Ongoing WMS status colors
       switch (status) {
         case 200: // Open
@@ -364,11 +386,43 @@ const CustomerOrdersTab: React.FC = () => {
         default:
           return 'text-gray-700 bg-gray-100';
       }
+    } else {
+      // Combined view - use source-specific colors
+      if (typeof status === 'string') {
+        // WooCommerce status
+        switch (status) {
+          case 'processing':
+          case 'delvis-levert':
+            return 'text-yellow-700 bg-yellow-100';
+          case 'completed':
+            return 'text-green-700 bg-green-100';
+          case 'on-hold':
+            return 'text-red-700 bg-red-100';
+          case 'pending':
+            return 'text-blue-700 bg-blue-100';
+          default:
+            return 'text-gray-700 bg-gray-100';
+        }
+      } else {
+        // Ongoing WMS status
+        switch (status) {
+          case 200: return 'text-blue-700 bg-blue-100';
+          case 210: return 'text-red-700 bg-red-100';
+          case 300: return 'text-yellow-700 bg-yellow-100';
+          case 320: return 'text-purple-700 bg-purple-100';
+          case 400: return 'text-green-700 bg-green-100';
+          case 450: return 'text-green-700 bg-green-100';
+          case 451: return 'text-orange-700 bg-orange-100';
+          case 500: return 'text-green-700 bg-green-100';
+          case 600: return 'text-gray-700 bg-gray-100';
+          default: return 'text-gray-700 bg-gray-100';
+        }
+      }
     }
   };
 
   const getStatusIcon = (status: string | number) => {
-    if (syncSource === 'woocommerce') {
+    if (activeTab === 'woocommerce') {
       switch (status) {
         case 'processing':
         case 'delvis-levert':
@@ -382,7 +436,7 @@ const CustomerOrdersTab: React.FC = () => {
         default:
           return <Package className="w-4 h-4" />;
       }
-    } else {
+    } else if (activeTab === 'ongoing_wms') {
       // Ongoing WMS status icons
       switch (status) {
         case 200: // Open
@@ -406,13 +460,45 @@ const CustomerOrdersTab: React.FC = () => {
         default:
           return <Package className="w-4 h-4" />;
       }
+    } else {
+      // Combined view - use source-specific icons
+      if (typeof status === 'string') {
+        // WooCommerce status
+        switch (status) {
+          case 'processing':
+          case 'delvis-levert':
+            return <Clock className="w-4 h-4" />;
+          case 'completed':
+            return <CheckCircle className="w-4 h-4" />;
+          case 'on-hold':
+            return <XCircle className="w-4 h-4" />;
+          case 'pending':
+            return <AlertTriangle className="w-4 h-4" />;
+          default:
+            return <Package className="w-4 h-4" />;
+        }
+      } else {
+        // Ongoing WMS status
+        switch (status) {
+          case 200: return <Package className="w-4 h-4" />;
+          case 210: return <XCircle className="w-4 h-4" />;
+          case 300: return <Truck className="w-4 h-4" />;
+          case 320: return <User className="w-4 h-4" />;
+          case 400: return <CheckCircle className="w-4 h-4" />;
+          case 450: return <CheckCircle className="w-4 h-4" />;
+          case 451: return <AlertTriangle className="w-4 h-4" />;
+          case 500: return <CheckCircle className="w-4 h-4" />;
+          case 600: return <Clock className="w-4 h-4" />;
+          default: return <Package className="w-4 h-4" />;
+        }
+      }
     }
   };
 
   const getStatusText = (status: string | number) => {
-    if (syncSource === 'woocommerce') {
+    if (activeTab === 'woocommerce') {
       return status as string;
-    } else {
+    } else if (activeTab === 'ongoing_wms') {
       // Ongoing WMS status text
       switch (status) {
         case 200: return 'Open';
@@ -425,6 +511,24 @@ const CustomerOrdersTab: React.FC = () => {
         case 500: return 'Collected';
         case 600: return 'Waiting for customer';
         default: return `Status ${status}`;
+      }
+    } else {
+      // Combined view
+      if (typeof status === 'string') {
+        return status;
+      } else {
+        switch (status) {
+          case 200: return 'Open';
+          case 210: return 'On Hold';
+          case 300: return 'Picking';
+          case 320: return 'Assigned';
+          case 400: return 'Picked';
+          case 450: return 'Sent';
+          case 451: return 'Partially Sent';
+          case 500: return 'Collected';
+          case 600: return 'Waiting for customer';
+          default: return `Status ${status}`;
+        }
       }
     }
   };
@@ -460,17 +564,24 @@ const CustomerOrdersTab: React.FC = () => {
   };
 
   const handleSync = () => {
-    if (syncSource === 'woocommerce') {
+    if (activeTab === 'woocommerce') {
       syncOrdersFromWooCommerce();
-    } else {
+    } else if (activeTab === 'ongoing_wms') {
       syncOrdersFromOngoingWMS();
+    } else {
+      // Combined view - sync both
+      Promise.all([
+        syncOrdersFromWooCommerce(),
+        syncOrdersFromOngoingWMS()
+      ]);
     }
   };
 
   const handleOrderClick = async (order: OrderData) => {
     // If order lines are not loaded yet, load them
     if (!order.orderLines || order.orderLines.length === 0) {
-      const orderLines = await loadOrderLines(order.id, syncSource);
+      const source = 'wooStatus' in order ? 'woocommerce' : 'ongoing_wms';
+      const orderLines = await loadOrderLines(order.id, source);
       
       // Create a copy of the order with order lines
       const orderWithLines = {
@@ -506,16 +617,22 @@ const CustomerOrdersTab: React.FC = () => {
                          order.customerName.toLowerCase().includes(searchTerm.toLowerCase());
     
     let matchesStatus = true;
-          if (statusFilter !== 'all') {
-        if (syncSource === 'woocommerce') {
-          matchesStatus = 'wooStatus' in order && order.wooStatus === statusFilter;
-        } else {
-          // Handle both old and new field names for Ongoing WMS
-          const ongoingStatus = 'ongoingStatus' in order ? order.ongoingStatus : 
-                              ('orderStatus' in order && (order.orderStatus as any)?.number) ? (order.orderStatus as any).number : null;
-          matchesStatus = ongoingStatus === parseInt(statusFilter);
-        }
+    if (statusFilter !== 'all') {
+      if (activeTab === 'woocommerce') {
+        matchesStatus = 'wooStatus' in order && order.wooStatus === statusFilter;
+      } else if (activeTab === 'ongoing_wms') {
+        // Handle both old and new field names for Ongoing WMS
+        const ongoingStatus = 'ongoingStatus' in order ? order.ongoingStatus : 
+                            ('orderStatus' in order && (order.orderStatus as any)?.number) ? (order.orderStatus as any).number : null;
+        matchesStatus = ongoingStatus === parseInt(statusFilter);
+      } else {
+        // Combined view - check both sources
+        const wooStatus = 'wooStatus' in order ? order.wooStatus : null;
+        const ongoingStatus = 'ongoingStatus' in order ? order.ongoingStatus : 
+                            ('orderStatus' in order && (order.orderStatus as any)?.number) ? (order.orderStatus as any).number : null;
+        matchesStatus = wooStatus === statusFilter || ongoingStatus === parseInt(statusFilter);
       }
+    }
     
     return matchesSearch && matchesStatus;
   });
@@ -525,6 +642,7 @@ const CustomerOrdersTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header with Tabs */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Customer Orders</h1>
@@ -543,38 +661,78 @@ const CustomerOrdersTab: React.FC = () => {
             <span>Refresh</span>
           </button>
           
-          {/* Sync Source Selector */}
-          <div className="flex items-center space-x-2">
-            <select
-              value={syncSource}
-              onChange={(e) => setSyncSource(e.target.value as 'woocommerce' | 'ongoing_wms')}
-              disabled={syncing}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              <option value="ongoing_wms">Ongoing WMS</option>
-              <option value="woocommerce">WooCommerce</option>
-            </select>
-            
-            <button 
-              onClick={handleSync}
-              disabled={loading || syncing}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              <span>
-                {syncing 
-                  ? `Syncing from ${syncSource === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}...` 
-                  : `Sync from ${syncSource === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}`
-                }
-              </span>
-            </button>
-          </div>
+          <button 
+            onClick={handleSync}
+            disabled={loading || syncing}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+            <span>
+              {syncing 
+                ? `Syncing ${activeTab === 'combined' ? 'all sources' : activeTab === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}...` 
+                : `Sync ${activeTab === 'combined' ? 'All Sources' : activeTab === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}`
+              }
+            </span>
+          </button>
           
           <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2">
             <Plus className="w-4 h-4" />
             <span>New Order</span>
           </button>
         </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('ongoing_wms')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'ongoing_wms'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Ongoing WMS Orders
+            {activeTab === 'ongoing_wms' && statusCounts['ongoing_wms'] !== undefined && (
+              <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                {statusCounts['ongoing_wms']}
+              </span>
+            )}
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('woocommerce')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'woocommerce'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            WooCommerce Orders
+            {activeTab === 'woocommerce' && statusCounts['woocommerce'] !== undefined && (
+              <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                {statusCounts['woocommerce']}
+              </span>
+            )}
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('combined')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'combined'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Combined View
+            {activeTab === 'combined' && statusCounts['total'] !== undefined && (
+              <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                {statusCounts['total']}
+              </span>
+            )}
+          </button>
+        </nav>
       </div>
 
       {/* Loading State */}
@@ -584,7 +742,7 @@ const CustomerOrdersTab: React.FC = () => {
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
             <span className="text-gray-600">
               {syncing 
-                ? `Syncing orders from ${syncSource === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}...` 
+                ? `Syncing orders from ${activeTab === 'combined' ? 'all sources' : activeTab === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}...` 
                 : 'Loading orders...'
               }
             </span>
