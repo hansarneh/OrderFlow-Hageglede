@@ -208,7 +208,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                     <span className="text-gray-600">Total Items:</span>
                     <span className="font-medium text-gray-900">{order.totalItems}</span>
                   </div>
-                  {order.permalink && (
+                  {'permalink' in order && order.permalink && (
                     <div className="pt-2">
                       <a
                         href={order.permalink}
