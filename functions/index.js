@@ -1573,3 +1573,86 @@ exports.scheduledOngoingPurchaseOrderSync = functions.pubsub.schedule('every 1 h
     throw error;
   }
 });
+
+// Diagnostic function to test specific order IDs and see their statuses
+exports.diagnoseOngoingOrders = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { orderIds = [214600, 216042] } = data;
+
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+
+    console.log(`Diagnosing orders: ${orderIds.join(', ')}`);
+
+    const results = [];
+
+    for (const orderId of orderIds) {
+      try {
+        const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+            'User-Agent': 'LogiFlow/1.0'
+          },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const order = await response.json();
+          
+          results.push({
+            orderId: orderId,
+            found: true,
+            orderNumber: order.orderInfo?.orderNumber,
+            status: {
+              number: order.orderInfo?.orderStatus?.number,
+              text: order.orderInfo?.orderStatus?.text
+            },
+            orderLines: order.orderLines?.length || 0,
+            rawStatus: order.orderInfo?.orderStatus
+          });
+          
+          console.log(`Order ${orderId}: Status ${order.orderInfo?.orderStatus?.number} (${order.orderInfo?.orderStatus?.text})`);
+        } else {
+          results.push({
+            orderId: orderId,
+            found: false,
+            status: response.status,
+            error: `HTTP ${response.status}`
+          });
+          
+          console.log(`Order ${orderId}: Not found (HTTP ${response.status})`);
+        }
+      } catch (error) {
+        results.push({
+          orderId: orderId,
+          found: false,
+          error: error.message
+        });
+        
+        console.log(`Order ${orderId}: Error - ${error.message}`);
+      }
+    }
+
+    return {
+      success: true,
+      results: results
+    };
+
+  } catch (error) {
+    console.error('Error diagnosing Ongoing WMS orders:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});

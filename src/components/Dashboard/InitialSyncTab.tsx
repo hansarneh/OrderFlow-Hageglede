@@ -263,6 +263,38 @@ const InitialSyncTab: React.FC = () => {
     setSyncProgress(prev => ({ ...prev, logs: [] }));
   };
 
+  const runDiagnostic = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
+
+    addLog('Running diagnostic on known orders...');
+
+    try {
+      const diagnoseOrders = httpsCallable(functions, 'diagnoseOngoingOrders');
+      const result = await diagnoseOrders({
+        orderIds: [214600, 216042]
+      });
+
+      const data = result.data as any;
+      if (data.success) {
+        addLog('Diagnostic results:');
+        data.results.forEach((order: any) => {
+          if (order.found) {
+            addLog(`Order ${order.orderId}: Status ${order.status.number} (${order.status.text}) - ${order.orderLines} order lines`);
+          } else {
+            addLog(`Order ${order.orderId}: ${order.error}`);
+          }
+        });
+      } else {
+        addLog('Diagnostic failed');
+      }
+    } catch (err: any) {
+      addLog(`Diagnostic error: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -273,13 +305,22 @@ const InitialSyncTab: React.FC = () => {
         </div>
         <div className="flex items-center space-x-3">
           {!syncProgress.isRunning ? (
-            <button
-              onClick={startSync}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
-            >
-              <Play className="w-4 h-4" />
-              <span>Start Sync</span>
-            </button>
+            <>
+              <button
+                onClick={runDiagnostic}
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center space-x-2"
+              >
+                <Target className="w-4 h-4" />
+                <span>Diagnostic</span>
+              </button>
+              <button
+                onClick={startSync}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
+              >
+                <Play className="w-4 h-4" />
+                <span>Start Sync</span>
+              </button>
+            </>
           ) : (
             <button
               onClick={stopSync}
