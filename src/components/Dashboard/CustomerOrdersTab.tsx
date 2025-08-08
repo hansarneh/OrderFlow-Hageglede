@@ -640,6 +640,11 @@ const CustomerOrdersTab: React.FC = () => {
   const statusCounts = getStatusCounts();
   const deliveryCounts = getDeliveryCounts();
 
+  // Debug logging
+  console.log('Active tab:', activeTab);
+  console.log('Syncing state:', syncing);
+  console.log('Loading state:', loading);
+
   return (
     <div className="space-y-6">
       {/* Header with Tabs */}
