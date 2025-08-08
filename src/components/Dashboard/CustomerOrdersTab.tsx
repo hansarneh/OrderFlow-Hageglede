@@ -646,17 +646,10 @@ const CustomerOrdersTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* TEST INDICATOR */}
-      <div className="bg-red-500 text-white p-4 rounded-lg text-center font-bold text-2xl">
-        🚨 NEW VERSION DEPLOYED - TABS SHOULD BE VISIBLE BELOW 🚨
-        <br />
-        <span className="text-sm">Timestamp: {new Date().toISOString()}</span>
-      </div>
-      
       {/* Header with Tabs */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Customer Orders - NEW VERSION</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Customer Orders</h1>
           <p className="text-gray-600 mt-2">Manage and track customer orders with delivery status</p>
           {lastSyncTime && (
             <p className="text-sm text-gray-500 mt-1">Last updated: {lastSyncTime}</p>
@@ -705,11 +698,6 @@ const CustomerOrdersTab: React.FC = () => {
             }`}
           >
             Ongoing WMS Orders
-            {activeTab === 'ongoing_wms' && statusCounts['ongoing_wms'] !== undefined && (
-              <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
-                {statusCounts['ongoing_wms']}
-              </span>
-            )}
           </button>
           
           <button
@@ -721,11 +709,6 @@ const CustomerOrdersTab: React.FC = () => {
             }`}
           >
             WooCommerce Orders
-            {activeTab === 'woocommerce' && statusCounts['woocommerce'] !== undefined && (
-              <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
-                {statusCounts['woocommerce']}
-              </span>
-            )}
           </button>
           
           <button
@@ -737,11 +720,6 @@ const CustomerOrdersTab: React.FC = () => {
             }`}
           >
             Combined View
-            {activeTab === 'combined' && statusCounts['total'] !== undefined && (
-              <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">
-                {statusCounts['total']}
-              </span>
-            )}
           </button>
         </nav>
       </div>
