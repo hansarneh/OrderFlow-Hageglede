@@ -314,6 +314,30 @@ export interface OngoingOrderLine {
   };
 }
 
+// Order Mapping System
+export interface OrderMapping {
+  id: string;
+  wooOrderId: string;
+  ongoingOrderId: string;
+  customerName: string;
+  orderNumber: string;
+  mappingType: 'exact' | 'manual' | 'suggested';
+  confidence: number; // 0-100, how confident we are in this mapping
+  mappedAt: Date;
+  mappedBy?: string; // User ID who created the mapping
+  notes?: string;
+  isActive: boolean;
+  wooOrderData?: Partial<CustomerOrder>;
+  ongoingOrderData?: Partial<OngoingOrder>;
+}
+
+export interface OrderMappingCandidate {
+  wooOrder: CustomerOrder;
+  ongoingOrder: OngoingOrder;
+  confidence: number;
+  matchReason: string;
+}
+
 export interface OrderLine {
   id: string;
   orderId: string;
@@ -433,62 +457,13 @@ export const getOngoingOrderLines = async (orderId: string): Promise<OngoingOrde
       collection(db, 'ongoingOrderLines'),
       where('orderId', '==', orderId)
     );
-    
     const snapshot = await getDocs(q);
-    
-    const orderLines = snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        orderId: data.orderId,
-        ongoingLineItemId: data.ongoingLineItemId,
-        productId: data.productId,
-        productName: data.productName,
-        sku: data.sku,
-        quantity: data.quantity,
-        unitPrice: data.unitPrice,
-        totalPrice: data.totalPrice,
-        taxAmount: data.taxAmount,
-        metaData: data.metaData,
-        deliveredQuantity: data.deliveredQuantity,
-        deliveryDate: data.deliveryDate,
-        deliveryStatus: data.deliveryStatus,
-        partialDeliveryDetails: data.partialDeliveryDetails
-      } as OngoingOrderLine;
-    });
-    
-    // Fetch product details for each order line
-    for (const line of orderLines) {
-      if (line.productId) {
-        try {
-          const productsQuery = query(
-            collection(db, 'ongoingProducts'),
-            where('ongoingProductId', '==', line.productId)
-          );
-          
-          const productSnapshot = await getDocs(productsQuery);
-          
-          if (!productSnapshot.empty) {
-            const productData = productSnapshot.docs[0].data();
-            line.product = {
-              id: productSnapshot.docs[0].id,
-              ongoingProductId: productData.ongoingProductId,
-              name: productData.name,
-              sku: productData.sku,
-              stockQuantity: productData.stockQuantity,
-              stockStatus: productData.stockStatus,
-              produkttype: productData.produkttype
-            };
-          }
-        } catch (productError) {
-          console.error(`Error fetching product details for line ${line.id}:`, productError);
-        }
-      }
-    }
-    
-    return orderLines;
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as OngoingOrderLine[];
   } catch (error) {
-    console.error('Error getting ongoing order lines:', error);
+    console.error('Error fetching Ongoing WMS order lines:', error);
     return [];
   }
 };
@@ -732,6 +707,216 @@ export const getPurchaseOrders = async (): Promise<PurchaseOrder[]> => {
   } catch (error) {
     console.error('Error getting purchase orders:', error);
     // Return empty array on error to prevent app from crashing
+    return [];
+  }
+};
+
+// Order Mapping Functions
+export const createOrderMapping = async (
+  wooOrderId: string,
+  ongoingOrderId: string,
+  mappingType: 'exact' | 'manual' | 'suggested',
+  confidence: number,
+  notes?: string
+): Promise<string> => {
+  try {
+    // Get the orders to extract common data
+    const [wooOrder, ongoingOrder] = await Promise.all([
+      getDoc(doc(db, 'customerOrders', wooOrderId)),
+      getDoc(doc(db, 'ongoingOrders', ongoingOrderId))
+    ]);
+
+    if (!wooOrder.exists() || !ongoingOrder.exists()) {
+      throw new Error('One or both orders not found');
+    }
+
+    const wooData = wooOrder.data() as CustomerOrder;
+    const ongoingData = ongoingOrder.data() as OngoingOrder;
+
+    const mappingData: Omit<OrderMapping, 'id'> = {
+      wooOrderId,
+      ongoingOrderId,
+      customerName: wooData.customerName || ongoingData.customerName,
+      orderNumber: wooData.orderNumber || ongoingData.orderNumber,
+      mappingType,
+      confidence,
+      mappedAt: new Date(),
+      notes,
+      isActive: true,
+      wooOrderData: {
+        orderNumber: wooData.orderNumber,
+        customerName: wooData.customerName,
+        wooStatus: wooData.wooStatus,
+        totalValue: wooData.totalValue
+      },
+      ongoingOrderData: {
+        orderNumber: ongoingData.orderNumber,
+        customerName: ongoingData.customerName,
+        ongoingStatus: ongoingData.ongoingStatus,
+        totalValue: ongoingData.totalValue
+      }
+    };
+
+    const docRef = await addDoc(collection(db, 'orderMappings'), mappingData);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating order mapping:', error);
+    throw error;
+  }
+};
+
+export const getOrderMappings = async (): Promise<OrderMapping[]> => {
+  try {
+    const q = query(
+      collection(db, 'orderMappings'),
+      where('isActive', '==', true),
+      orderBy('mappedAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      mappedAt: doc.data().mappedAt?.toDate() || new Date()
+    })) as OrderMapping[];
+  } catch (error) {
+    console.error('Error fetching order mappings:', error);
+    return [];
+  }
+};
+
+export const getOrderMapping = async (wooOrderId?: string, ongoingOrderId?: string): Promise<OrderMapping | null> => {
+  try {
+    let q;
+    if (wooOrderId && ongoingOrderId) {
+      q = query(
+        collection(db, 'orderMappings'),
+        where('wooOrderId', '==', wooOrderId),
+        where('ongoingOrderId', '==', ongoingOrderId),
+        where('isActive', '==', true)
+      );
+    } else if (wooOrderId) {
+      q = query(
+        collection(db, 'orderMappings'),
+        where('wooOrderId', '==', wooOrderId),
+        where('isActive', '==', true)
+      );
+    } else if (ongoingOrderId) {
+      q = query(
+        collection(db, 'orderMappings'),
+        where('ongoingOrderId', '==', ongoingOrderId),
+        where('isActive', '==', true)
+      );
+    } else {
+      throw new Error('Either wooOrderId or ongoingOrderId must be provided');
+    }
+
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return null;
+
+    const doc = snapshot.docs[0];
+    return {
+      id: doc.id,
+      ...doc.data(),
+      mappedAt: doc.data().mappedAt?.toDate() || new Date()
+    } as OrderMapping;
+  } catch (error) {
+    console.error('Error fetching order mapping:', error);
+    return null;
+  }
+};
+
+export const updateOrderMapping = async (
+  mappingId: string,
+  updates: Partial<OrderMapping>
+): Promise<void> => {
+  try {
+    const docRef = doc(db, 'orderMappings', mappingId);
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('Error updating order mapping:', error);
+    throw error;
+  }
+};
+
+export const deactivateOrderMapping = async (mappingId: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'orderMappings', mappingId);
+    await updateDoc(docRef, {
+      isActive: false,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('Error deactivating order mapping:', error);
+    throw error;
+  }
+};
+
+export const findOrderMappingCandidates = async (): Promise<OrderMappingCandidate[]> => {
+  try {
+    // Get all orders from both systems
+    const [wooOrders, ongoingOrders] = await Promise.all([
+      getCustomerOrders('all'),
+      getOngoingOrders('all')
+    ]);
+
+    const candidates: OrderMappingCandidate[] = [];
+
+    // Find potential matches based on order number and customer name
+    for (const wooOrder of wooOrders) {
+      for (const ongoingOrder of ongoingOrders) {
+        let confidence = 0;
+        let matchReason = '';
+
+        // Check order number match (exact)
+        if (wooOrder.orderNumber === ongoingOrder.orderNumber) {
+          confidence += 50;
+          matchReason += 'Order number match; ';
+        }
+
+        // Check customer name match (fuzzy)
+        if (wooOrder.customerName && ongoingOrder.customerName) {
+          const wooName = wooOrder.customerName.toLowerCase().trim();
+          const ongoingName = ongoingOrder.customerName.toLowerCase().trim();
+          
+          if (wooName === ongoingName) {
+            confidence += 30;
+            matchReason += 'Customer name exact match; ';
+          } else if (wooName.includes(ongoingName) || ongoingName.includes(wooName)) {
+            confidence += 20;
+            matchReason += 'Customer name partial match; ';
+          }
+        }
+
+        // Check total value similarity (within 10%)
+        if (wooOrder.totalValue && ongoingOrder.totalValue) {
+          const valueDiff = Math.abs(wooOrder.totalValue - ongoingOrder.totalValue);
+          const valueRatio = valueDiff / Math.max(wooOrder.totalValue, ongoingOrder.totalValue);
+          
+          if (valueRatio <= 0.1) {
+            confidence += 20;
+            matchReason += 'Total value similar; ';
+          }
+        }
+
+        // Only include candidates with reasonable confidence
+        if (confidence >= 30) {
+          candidates.push({
+            wooOrder,
+            ongoingOrder,
+            confidence,
+            matchReason: matchReason.trim()
+          });
+        }
+      }
+    }
+
+    // Sort by confidence (highest first)
+    return candidates.sort((a, b) => b.confidence - a.confidence);
+  } catch (error) {
+    console.error('Error finding order mapping candidates:', error);
     return [];
   }
 };

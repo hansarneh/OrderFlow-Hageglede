@@ -14,7 +14,8 @@ import {
   ChevronRight,
   AlertTriangle,
   Box,
-  ShoppingCart
+  ShoppingCart,
+  Link
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -35,6 +36,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, activeTab, 
     { id: 'backordered-products', label: 'Backordered Products', icon: AlertTriangle },
     { id: 'orders-at-risk', label: 'Orders at Risk', icon: AlertTriangle },
     { id: 'customer-orders', label: 'Customer Orders', icon: ShoppingCart },
+    { id: 'order-mappings', label: 'Order Mappings', icon: Link },
     { id: 'purchase-orders', label: 'Purchase Orders', icon: Package },
     { 
       id: 'shipment-planner', 
