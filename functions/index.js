@@ -585,3 +585,302 @@ exports.cleanupUserData = functions.auth.user().onDelete(async (user) => {
     return { error: error.message };
   }
 });
+
+// Function to fetch Ongoing WMS orders
+exports.fetchOngoingOrders = functions.https.onCall(async (data, context) => {
+  // Check if the caller is authenticated
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "The function must be called while authenticated."
+    );
+  }
+
+  // Get Ongoing WMS credentials for this user
+  const integrationsSnapshot = await db.collection("integrations")
+    .where("userId", "==", context.auth.uid)
+    .where("integrationType", "==", "ongoing_wms")
+    .limit(1)
+    .get();
+
+  if (integrationsSnapshot.empty) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Ongoing WMS integration not configured. Please add your Ongoing WMS credentials in Settings."
+    );
+  }
+
+  const credentials = integrationsSnapshot.docs[0].data().credentials;
+
+  // Validate credentials
+  if (!credentials.username || !credentials.password || !credentials.baseUrl) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Incomplete Ongoing WMS credentials. Please check your settings."
+    );
+  }
+
+  try {
+    // Normalize base URL
+    let baseUrl = credentials.baseUrl.replace(/\/$/, "");
+    if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+      baseUrl = "https://" + baseUrl;
+    }
+
+    // Create Basic Auth header
+    const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64");
+    
+    // Fetch orders from Ongoing WMS API
+    const apiUrl = `${baseUrl}/api/v1/orders`;
+    
+    console.log(`Fetching orders from: ${apiUrl}`);
+    
+    const response = await fetch(apiUrl, {
+      method: "GET",
+      headers: {
+        "Authorization": `Basic ${auth}`,
+        "Content-Type": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Ongoing WMS API error:", response.status, errorText);
+      
+      if (response.status === 401) {
+        throw new functions.https.HttpsError(
+          "unauthenticated",
+          "Invalid Ongoing WMS credentials. Please check your username and password."
+        );
+      }
+      
+      throw new functions.https.HttpsError(
+        "internal",
+        `Ongoing WMS API error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const ongoingOrders = await response.json();
+    console.log(`Fetched ${ongoingOrders.length || 0} orders from Ongoing WMS`);
+
+    // Process and store orders in Firestore
+    let syncedCount = 0;
+    let errorCount = 0;
+
+    for (const ongoingOrder of ongoingOrders) {
+      try {
+        // For now, we'll store the raw data until we understand the structure
+        // We'll map this properly once we see the actual API response
+        const orderRef = db.collection("customerOrders").doc(ongoingOrder.id || `ongoing_${Date.now()}_${Math.random()}`);
+        
+        await orderRef.set({
+          ongoingOrderId: ongoingOrder.id,
+          orderNumber: ongoingOrder.orderNumber || ongoingOrder.number || ongoingOrder.id,
+          customerName: ongoingOrder.customerName || ongoingOrder.customer?.name || `Customer ${ongoingOrder.id}`,
+          ongoingStatus: ongoingOrder.status,
+          totalValue: ongoingOrder.totalValue || ongoingOrder.total || 0,
+          totalItems: ongoingOrder.totalItems || ongoingOrder.items?.length || 0,
+          dateCreated: ongoingOrder.dateCreated || ongoingOrder.createdAt || new Date().toISOString(),
+          lineItems: ongoingOrder.lineItems || ongoingOrder.items || [],
+          billingAddress: ongoingOrder.billingAddress || ongoingOrder.billing?.address || "",
+          shippingAddress: ongoingOrder.shippingAddress || ongoingOrder.shipping?.address || "",
+          deliveryDate: ongoingOrder.deliveryDate || ongoingOrder.delivery?.date || null,
+          deliveryType: ongoingOrder.deliveryType || ongoingOrder.delivery?.type || null,
+          shippingMethod: ongoingOrder.shippingMethod || ongoingOrder.shipping?.method || null,
+          rawData: ongoingOrder, // Store raw data for debugging
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        syncedCount++;
+      } catch (error) {
+        console.error(`Error processing Ongoing WMS order ${ongoingOrder.id}:`, error);
+        errorCount++;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Successfully synced ${syncedCount} orders from Ongoing WMS`,
+      syncedCount,
+      errorCount,
+      totalOrders: ongoingOrders.length || 0
+    };
+  } catch (error) {
+    console.error("Error syncing Ongoing WMS orders:", error);
+    throw new functions.https.HttpsError(
+      "internal",
+      error.message || "Failed to sync orders from Ongoing WMS",
+      error
+    );
+  }
+});
+
+// Function to sync Ongoing WMS orders to Firestore (placeholder)
+exports.syncOngoingOrders = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    // For now, this is a placeholder function
+    // We'll implement this once we find the correct order endpoints
+    return {
+      success: true,
+      message: 'Ongoing WMS order sync is not yet implemented. We need to find the correct order endpoints first.',
+      orders: []
+    };
+
+  } catch (error) {
+    console.error('Error syncing Ongoing WMS orders:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});
+
+// Fetch articles from Ongoing WMS
+exports.fetchOngoingArticles = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { goodsOwnerId = 85, limit = 50, offset = 0, search = '', articleNumber = '' } = data;
+
+    // Get Ongoing WMS credentials from Firestore
+    const integrationsRef = admin.firestore().collection('integrations');
+    const ongoingWMSDoc = await integrationsRef.doc('ongoing_wms').get();
+    
+    if (!ongoingWMSDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Ongoing WMS credentials not found');
+    }
+
+    const credentials = ongoingWMSDoc.data();
+    const { username, password, baseUrl } = credentials;
+
+    if (!username || !password || !baseUrl) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing Ongoing WMS credentials');
+    }
+
+    // Create Basic Auth header
+    const authString = `${username}:${password}`;
+    const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
+
+    // Build query parameters
+    const queryParams = new URLSearchParams({
+      goodsOwnerId: goodsOwnerId.toString(),
+      limit: limit.toString(),
+      offset: offset.toString()
+    });
+
+    if (search) {
+      queryParams.append('search', search);
+    }
+
+    if (articleNumber) {
+      queryParams.append('articleNumber', articleNumber);
+    }
+
+    const apiUrl = `${baseUrl.replace(/\/$/, '')}/articles?${queryParams.toString()}`;
+
+    console.log(`Fetching articles from Ongoing WMS: ${apiUrl}`);
+
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'User-Agent': 'LogiFlow/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Ongoing WMS API error: ${response.status} ${response.statusText}`);
+      console.error(`Response: ${errorText}`);
+      throw new functions.https.HttpsError('internal', `Ongoing WMS API error: ${response.status} ${response.statusText}`);
+    }
+
+    const articles = await response.json();
+
+    console.log(`Successfully fetched ${articles.length} articles from Ongoing WMS`);
+
+    return {
+      success: true,
+      articles: articles,
+      total: articles.length,
+      goodsOwnerId: goodsOwnerId
+    };
+
+  } catch (error) {
+    console.error('Error fetching Ongoing WMS articles:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});
+
+// Fetch warehouses from Ongoing WMS
+exports.fetchOngoingWarehouses = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { goodsOwnerId = 85 } = data;
+
+    // Get Ongoing WMS credentials from Firestore
+    const integrationsRef = admin.firestore().collection('integrations');
+    const ongoingWMSDoc = await integrationsRef.doc('ongoing_wms').get();
+    
+    if (!ongoingWMSDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Ongoing WMS credentials not found');
+    }
+
+    const credentials = ongoingWMSDoc.data();
+    const { username, password, baseUrl } = credentials;
+
+    if (!username || !password || !baseUrl) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing Ongoing WMS credentials');
+    }
+
+    // Create Basic Auth header
+    const authString = `${username}:${password}`;
+    const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
+
+    const apiUrl = `${baseUrl.replace(/\/$/, '')}/warehouses?goodsOwnerId=${goodsOwnerId}`;
+
+    console.log(`Fetching warehouses from Ongoing WMS: ${apiUrl}`);
+
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'User-Agent': 'LogiFlow/1.0'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Ongoing WMS API error: ${response.status} ${response.statusText}`);
+      console.error(`Response: ${errorText}`);
+      throw new functions.https.HttpsError('internal', `Ongoing WMS API error: ${response.status} ${response.statusText}`);
+    }
+
+    const warehouses = await response.json();
+
+    console.log(`Successfully fetched ${warehouses.length} warehouses from Ongoing WMS`);
+
+    return {
+      success: true,
+      warehouses: warehouses,
+      total: warehouses.length,
+      goodsOwnerId: goodsOwnerId
+    };
+
+  } catch (error) {
+    console.error('Error fetching Ongoing WMS warehouses:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});

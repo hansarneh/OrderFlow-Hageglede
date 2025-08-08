@@ -37,6 +37,12 @@ interface RackbeatCredentials {
   apiKey: string;
 }
 
+interface OngoingWMSCredentials {
+  username: string;
+  password: string;
+  baseUrl: string;
+}
+
 const SettingsTab: React.FC = () => {
   const { user, users, addUser, updateUser, deleteUser, refreshUsers } = useAuth();
   const [activeSection, setActiveSection] = useState('integrations');
@@ -72,6 +78,13 @@ const SettingsTab: React.FC = () => {
     apiKey: ''
   });
 
+  // Ongoing WMS form state
+  const [ongoingWMSForm, setOngoingWMSForm] = useState<OngoingWMSCredentials>({
+    username: '',
+    password: '',
+    baseUrl: ''
+  });
+
   // Load integrations and users on component mount
   useEffect(() => {
     loadIntegrations();
@@ -96,6 +109,11 @@ const SettingsTab: React.FC = () => {
       const rackbeat = integrations.find(i => i.integrationType === 'rackbeat');
       if (rackbeat) {
         setRackbeatForm(rackbeat.credentials);
+      }
+
+      const ongoingWMS = integrations.find(i => i.integrationType === 'ongoing_wms');
+      if (ongoingWMS) {
+        setOngoingWMSForm(ongoingWMS.credentials);
       }
 
     } catch (err: any) {
@@ -138,6 +156,11 @@ const SettingsTab: React.FC = () => {
   const handleRackbeatSave = async (e: React.FormEvent) => {
     e.preventDefault();
     await saveIntegrationData('rackbeat', rackbeatForm);
+  };
+
+  const handleOngoingWMSSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveIntegrationData('ongoing_wms', ongoingWMSForm);
   };
 
   const togglePasswordVisibility = (field: string) => {
@@ -466,6 +489,75 @@ const SettingsTab: React.FC = () => {
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 <span>{saving ? 'Saving...' : 'Save Rackbeat Settings'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Ongoing WMS Integration */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <Truck className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Ongoing WMS Integration</h3>
+                <p className="text-sm text-gray-600">Connect your Ongoing WMS system to sync orders and inventory</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleOngoingWMSSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Base URL</label>
+                <input
+                  type="url"
+                  value={ongoingWMSForm.baseUrl}
+                  onChange={(e) => setOngoingWMSForm({ ...ongoingWMSForm, baseUrl: e.target.value })}
+                  placeholder="https://api.ongoingsystems.se/Spedify/api/v1/"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                <input
+                  type="text"
+                  value={ongoingWMSForm.username}
+                  onChange={(e) => setOngoingWMSForm({ ...ongoingWMSForm, username: e.target.value })}
+                  placeholder="Your Ongoing WMS username"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPasswords.ongoingWMSPassword ? "text" : "password"}
+                    value={ongoingWMSForm.password}
+                    onChange={(e) => setOngoingWMSForm({ ...ongoingWMSForm, password: e.target.value })}
+                    placeholder="Your Ongoing WMS password"
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => togglePasswordVisibility('ongoingWMSPassword')}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPasswords.ongoingWMSPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 flex items-center justify-center space-x-2"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{saving ? 'Saving...' : 'Save Ongoing WMS Settings'}</span>
               </button>
             </form>
           </div>
