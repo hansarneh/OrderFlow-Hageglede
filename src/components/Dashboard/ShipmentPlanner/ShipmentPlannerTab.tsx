@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import CustomerOrdersTab from './CustomerOrdersTab';
+import CustomerOrdersTab from '../CustomerOrdersTab';
 import PurchaseOrdersTab from './PurchaseOrdersTab';
 import ResourcePlannerTab from './ResourcePlannerTab';
 import PlaygroundTab from './PlaygroundTab';
