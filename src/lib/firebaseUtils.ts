@@ -261,6 +261,59 @@ export interface CustomerOrder {
   daysSinceDeliveryDate?: number;
 }
 
+// New interface for Ongoing WMS orders
+export interface OngoingOrder {
+  id: string;
+  ongoingOrderId: number;
+  orderNumber: string;
+  customerName: string;
+  ongoingStatus: number; // Ongoing WMS uses numeric status codes
+  totalValue: number;
+  totalItems: number;
+  dateCreated: string;
+  lineItems: any[];
+  metaData: any;
+  billingAddress: string;
+  billingAddressJson: any;
+  deliveryType: string | null;
+  shippingMethodTitle: string | null;
+  deliveryDate: string | null;
+  orderLines?: OngoingOrderLine[];
+  isAtRisk?: boolean;
+  riskReason?: string;
+  riskLevel?: 'high' | 'medium' | 'low';
+  daysSinceDeliveryDate?: number;
+  source: 'ongoing_wms';
+}
+
+// New interface for Ongoing WMS order lines
+export interface OngoingOrderLine {
+  id: string;
+  orderId: string;
+  ongoingLineItemId: number;
+  productId: number;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  taxAmount: number;
+  metaData: any;
+  deliveredQuantity: number;
+  deliveryDate: string | null;
+  deliveryStatus: 'pending' | 'partial' | 'delivered' | 'cancelled';
+  partialDeliveryDetails: any;
+  product?: {
+    id: string;
+    ongoingProductId: number;
+    name: string;
+    sku: string | null;
+    stockQuantity: number;
+    stockStatus: string;
+    produkttype: string | null;
+  };
+}
+
 export interface OrderLine {
   id: string;
   orderId: string;
@@ -331,6 +384,115 @@ export const getCustomerOrders = async (statusFilter: string = 'all'): Promise<C
   }
 };
 
+// New function to get Ongoing WMS orders
+export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<OngoingOrder[]> => {
+  try {
+    let q = query(
+      collection(db, 'ongoingOrders'),
+      orderBy('dateCreated', 'desc')
+    );
+    
+    if (statusFilter !== 'all') {
+      q = query(q, where('ongoingStatus', '==', parseInt(statusFilter)));
+    }
+    
+    const snapshot = await getDocs(q);
+    
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ongoingOrderId: data.ongoingOrderId,
+        orderNumber: data.orderNumber,
+        customerName: data.customerName,
+        ongoingStatus: data.ongoingStatus,
+        totalValue: data.totalValue,
+        totalItems: data.totalItems,
+        dateCreated: data.dateCreated,
+        lineItems: data.lineItems || [],
+        metaData: data.metaData || {},
+        billingAddress: data.billingAddress,
+        billingAddressJson: data.billingAddressJson,
+        deliveryType: data.deliveryType,
+        shippingMethodTitle: data.shippingMethodTitle,
+        deliveryDate: data.deliveryDate,
+        source: 'ongoing_wms'
+      } as OngoingOrder;
+    });
+  } catch (error) {
+    console.error('Error getting ongoing orders:', error);
+    // Return empty array on error to prevent app from crashing
+    return [];
+  }
+};
+
+// New function to get Ongoing WMS order lines
+export const getOngoingOrderLines = async (orderId: string): Promise<OngoingOrderLine[]> => {
+  try {
+    const q = query(
+      collection(db, 'ongoingOrderLines'),
+      where('orderId', '==', orderId)
+    );
+    
+    const snapshot = await getDocs(q);
+    
+    const orderLines = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        orderId: data.orderId,
+        ongoingLineItemId: data.ongoingLineItemId,
+        productId: data.productId,
+        productName: data.productName,
+        sku: data.sku,
+        quantity: data.quantity,
+        unitPrice: data.unitPrice,
+        totalPrice: data.totalPrice,
+        taxAmount: data.taxAmount,
+        metaData: data.metaData,
+        deliveredQuantity: data.deliveredQuantity,
+        deliveryDate: data.deliveryDate,
+        deliveryStatus: data.deliveryStatus,
+        partialDeliveryDetails: data.partialDeliveryDetails
+      } as OngoingOrderLine;
+    });
+    
+    // Fetch product details for each order line
+    for (const line of orderLines) {
+      if (line.productId) {
+        try {
+          const productsQuery = query(
+            collection(db, 'ongoingProducts'),
+            where('ongoingProductId', '==', line.productId)
+          );
+          
+          const productSnapshot = await getDocs(productsQuery);
+          
+          if (!productSnapshot.empty) {
+            const productData = productSnapshot.docs[0].data();
+            line.product = {
+              id: productSnapshot.docs[0].id,
+              ongoingProductId: productData.ongoingProductId,
+              name: productData.name,
+              sku: productData.sku,
+              stockQuantity: productData.stockQuantity,
+              stockStatus: productData.stockStatus,
+              produkttype: productData.produkttype
+            };
+          }
+        } catch (productError) {
+          console.error(`Error fetching product details for line ${line.id}:`, productError);
+        }
+      }
+    }
+    
+    return orderLines;
+  } catch (error) {
+    console.error('Error getting ongoing order lines:', error);
+    return [];
+  }
+};
+
 export const getOrderLines = async (orderId: string): Promise<OrderLine[]> => {
   try {
     const q = query(
@@ -385,8 +547,7 @@ export const getOrderLines = async (orderId: string): Promise<OrderLine[]> => {
             };
           }
         } catch (productError) {
-          console.warn(`Error fetching product details for line ${line.id}:`, productError);
-          // Continue without product details
+          console.error(`Error fetching product details for line ${line.id}:`, productError);
         }
       }
     }
@@ -394,7 +555,6 @@ export const getOrderLines = async (orderId: string): Promise<OrderLine[]> => {
     return orderLines;
   } catch (error) {
     console.error('Error getting order lines:', error);
-    // Return empty array on error to prevent app from crashing
     return [];
   }
 };

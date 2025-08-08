@@ -11,12 +11,14 @@ import {
   ExternalLink,
   User
 } from 'lucide-react';
-import { CustomerOrder, OrderLine } from '../../../lib/firebaseUtils';
+import { CustomerOrder, OrderLine, OngoingOrder, OngoingOrderLine } from '../../../lib/firebaseUtils';
+
+type OrderData = CustomerOrder | OngoingOrder;
 
 interface OrderDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  order: CustomerOrder | null;
+  order: OrderData | null;
   isLoadingLines: boolean;
 }
 
@@ -62,31 +64,86 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'text-green-700 bg-green-100';
-      case 'processing': return 'text-blue-700 bg-blue-100';
-      case 'delvis-levert': return 'text-purple-700 bg-purple-100';
-      case 'on-hold': return 'text-orange-700 bg-orange-100';
-      case 'pending': return 'text-yellow-700 bg-yellow-100';
-      case 'cancelled': return 'text-red-700 bg-red-100';
-      default: return 'text-gray-700 bg-gray-100';
+  const getStatusColor = (status: string | number) => {
+    if ('wooStatus' in order) {
+      // WooCommerce status colors
+      switch (status) {
+        case 'completed': return 'text-green-700 bg-green-100';
+        case 'processing': return 'text-blue-700 bg-blue-100';
+        case 'delvis-levert': return 'text-purple-700 bg-purple-100';
+        case 'on-hold': return 'text-orange-700 bg-orange-100';
+        case 'pending': return 'text-yellow-700 bg-yellow-100';
+        case 'cancelled': return 'text-red-700 bg-red-100';
+        default: return 'text-gray-700 bg-gray-100';
+      }
+    } else {
+      // Ongoing WMS status colors
+      switch (status) {
+        case 200: return 'text-blue-700 bg-blue-100';
+        case 210: return 'text-red-700 bg-red-100';
+        case 300: return 'text-yellow-700 bg-yellow-100';
+        case 320: return 'text-purple-700 bg-purple-100';
+        case 400: return 'text-green-700 bg-green-100';
+        case 450: return 'text-green-700 bg-green-100';
+        case 451: return 'text-orange-700 bg-orange-100';
+        case 500: return 'text-green-700 bg-green-100';
+        case 600: return 'text-gray-700 bg-gray-100';
+        default: return 'text-gray-700 bg-gray-100';
+      }
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return CheckCircle;
-      case 'processing': return Package;
-      case 'delvis-levert': return Truck;
-      case 'on-hold': return Clock;
-      case 'pending': return Clock;
-      case 'cancelled': return XCircle;
-      default: return Package;
+  const getStatusIcon = (status: string | number) => {
+    if ('wooStatus' in order) {
+      // WooCommerce status icons
+      switch (status) {
+        case 'completed': return CheckCircle;
+        case 'processing': return Package;
+        case 'delvis-levert': return Truck;
+        case 'on-hold': return Clock;
+        case 'pending': return Clock;
+        case 'cancelled': return XCircle;
+        default: return Package;
+      }
+    } else {
+      // Ongoing WMS status icons
+      switch (status) {
+        case 200: return Package;
+        case 210: return XCircle;
+        case 300: return Truck;
+        case 320: return User;
+        case 400: return CheckCircle;
+        case 450: return CheckCircle;
+        case 451: return Package;
+        case 500: return CheckCircle;
+        case 600: return Clock;
+        default: return Package;
+      }
     }
   };
 
-  const StatusIcon = getStatusIcon(order.wooStatus);
+  const getStatusText = (status: string | number) => {
+    if ('wooStatus' in order) {
+      return status as string;
+    } else {
+      // Ongoing WMS status text
+      switch (status) {
+        case 200: return 'Open';
+        case 210: return 'On Hold';
+        case 300: return 'Picking';
+        case 320: return 'Assigned';
+        case 400: return 'Picked';
+        case 450: return 'Sent';
+        case 451: return 'Partially Sent';
+        case 500: return 'Collected';
+        case 600: return 'Waiting for customer';
+        default: return `Status ${status}`;
+      }
+    }
+  };
+
+  const status = 'wooStatus' in order ? order.wooStatus : order.ongoingStatus;
+  const StatusIcon = getStatusIcon(status);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -100,12 +157,12 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
             <div>
               <div className="flex items-center space-x-3">
                 <h2 className="text-xl font-bold text-gray-900">Order #{order.orderNumber}</h2>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.wooStatus)}`}>
-                  <StatusIcon className="w-3 h-3 mr-1" />
-                  {order.wooStatus.replace('-', ' ')}
-                </span>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
+                <StatusIcon className="w-3 h-3 mr-1" />
+                {getStatusText(status)}
+              </span>
               </div>
-              <p className="text-sm text-gray-600 mt-1">ID: {order.woocommerceOrderId}</p>
+                              <p className="text-sm text-gray-600 mt-1">ID: {'woocommerceOrderId' in order ? order.woocommerceOrderId : order.ongoingOrderId}</p>
             </div>
           </div>
           <button

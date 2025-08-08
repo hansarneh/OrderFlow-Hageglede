@@ -21,114 +21,80 @@ import {
   Truck
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { getCustomerOrders, getOrderLines } from '../../lib/firebaseUtils';
+import { getCustomerOrders, getOrderLines, getOngoingOrders, getOngoingOrderLines, CustomerOrder, OngoingOrder, OrderLine, OngoingOrderLine } from '../../lib/firebaseUtils';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../lib/firebaseClient';
 import OrderDetailsModal from './CustomerOrders/OrderDetailsModal';
 
-interface OrderLine {
-  id: string;
-  orderId: string;
-  woocommerceLineItemId: number;
-  productId: number;
-  productName: string;
-  sku: string;
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-  taxAmount: number;
-  metaData: any;
-  deliveredQuantity: number;
-  deliveryDate: string | null;
-  deliveryStatus: 'pending' | 'partial' | 'delivered' | 'cancelled';
-  partialDeliveryDetails: any;
-  product?: {
-    id: string;
-    woocommerceId: number;
-    name: string;
-    sku: string | null;
-    stockQuantity: number;
-    stockStatus: string;
-    produkttype: string | null;
-  };
-}
-
-interface CustomerOrder {
-  id: string;
-  woocommerceOrderId: number;
-  orderNumber: string;
-  customerName: string;
-  wooStatus: string;
-  totalValue: number;
-  totalItems: number;
-  dateCreated: string;
-  lineItems: Array<{
-    id: number;
-    name: string;
-    product_id: number;
-    quantity: number;
-    total: string;
-    sku: string;
-  }>;
-  metaData: any;
-  billingAddress: string;
-  billingAddressJson: any;
-  permalink: string | null;
-  createdAt: string;
-  updatedAt: string;
-  deliveryType: string | null;
-  shippingMethodTitle: string | null;
-  deliveryDate: string | null;
-  orderLines?: OrderLine[];
-}
+// Union type for both order types
+type OrderData = CustomerOrder | OngoingOrder;
 
 const CustomerOrdersTab: React.FC = () => {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [deliveryFilter, setDeliveryFilter] = useState<string>('all');
-  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
+  const [customerOrders, setCustomerOrders] = useState<OrderData[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
-  const [selectedOrder, setSelectedOrder] = useState<CustomerOrder | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<OrderData | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [isLoadingLines, setIsLoadingLines] = useState(false);
+  const [syncSource, setSyncSource] = useState<'woocommerce' | 'ongoing_wms'>('ongoing_wms');
 
   // Load orders from Firestore database without order lines
   const loadOrdersFromDatabase = async () => {
+    if (!user?.id) return;
+
     setLoading(true);
     setError(null);
 
     try {
       console.log('Loading orders from database...');
       
-      // Get all orders without order_lines to improve performance
-      const orders = await getCustomerOrders();
-
-      console.log(`Loaded ${orders?.length || 0} orders from database`);
-      setCustomerOrders(orders || []);
-      setLastSyncTime(new Date().toLocaleString());
+      let orders: OrderData[] = [];
+      
+      if (syncSource === 'woocommerce') {
+        const wooOrders = await getCustomerOrders(statusFilter);
+        orders = wooOrders;
+      } else {
+        const ongoingOrders = await getOngoingOrders(statusFilter);
+        orders = ongoingOrders;
+      }
+      
+      setCustomerOrders(orders);
+      console.log(`Loaded ${orders.length} orders from database (${syncSource})`);
     } catch (err: any) {
       console.error('Error loading orders from database:', err);
       setError(err.message || 'Failed to load orders from database');
-      setCustomerOrders([]);
     } finally {
       setLoading(false);
     }
   };
 
   // Load order lines for a specific order
-  const loadOrderLines = async (orderId: string) => {
-    setIsLoadingLines(true);
-    try {
-      console.log(`Loading order lines for order ${orderId}...`);
-      
-      const lines = await getOrderLines(orderId);
+  const loadOrderLines = async (orderId: string, source: 'woocommerce' | 'ongoing_wms') => {
+    if (!user?.id) return [];
 
-      console.log(`Loaded ${lines?.length || 0} order lines for order ${orderId}`);
-      return lines || [];
+    setIsLoadingLines(true);
+
+    try {
+      console.log(`Loading order lines for order ${orderId} (${source})...`);
+      
+      let orderLines: any[] = [];
+      
+      if (source === 'woocommerce') {
+        const wooLines = await getOrderLines(orderId);
+        orderLines = wooLines;
+      } else {
+        const ongoingLines = await getOngoingOrderLines(orderId);
+        orderLines = ongoingLines;
+      }
+      
+      console.log(`Loaded ${orderLines.length} order lines for order ${orderId} (${source})`);
+      return orderLines;
     } catch (err: any) {
       console.error(`Error loading order lines for order ${orderId}:`, err);
       return [];
@@ -137,32 +103,18 @@ const CustomerOrdersTab: React.FC = () => {
     }
   };
 
-  // Helper function to extract detailed error message from Edge Function response
+  // Extract detailed error information from Firebase Functions
   const extractDetailedError = (functionError: any): string => {
-    try {
-      // Check if the error has context with a response body
-      if (functionError.context?.body) {
-        const errorData = JSON.parse(functionError.context.body);
-        if (errorData.error) {
-          // If there are additional details, include them
-          if (errorData.details && errorData.details !== errorData.error) {
-            return `${errorData.error}\n\nDetails: ${errorData.details}`;
-          }
-          return errorData.error;
-        }
-      }
-      
-      // Check if the error message itself contains useful information
-      if (functionError.message) {
-        return functionError.message;
-      }
-      
-      // Fallback to the original error
-      return functionError.toString();
-    } catch (parseError) {
-      // If we can't parse the error, return the original message
-      return functionError.message || functionError.toString() || 'Unknown error occurred';
+    if (functionError?.details?.message) {
+      return functionError.details.message;
     }
+    if (functionError?.message) {
+      return functionError.message;
+    }
+    if (typeof functionError === 'string') {
+      return functionError;
+    }
+    return 'An unknown error occurred';
   };
 
   // Sync orders from WooCommerce
@@ -221,27 +173,126 @@ const CustomerOrdersTab: React.FC = () => {
     }
   };
 
-  // Load orders from database on component mount
+  // Sync orders from Ongoing WMS
+  const syncOrdersFromOngoingWMS = async () => {
+    if (!user?.id) return;
+
+    setSyncing(true);
+    setError(null);
+
+    try {
+      console.log('Syncing orders from Ongoing WMS...');
+
+      // Get order statuses first to show available options
+      const getOrderStatuses = httpsCallable(functions, 'getOngoingOrderStatuses');
+      const statusesResult = await getOrderStatuses({});
+      const statusesData = statusesResult.data as any;
+
+      if (statusesData.error) {
+        throw new Error(statusesData.error);
+      }
+
+      console.log('Available order statuses:', statusesData.statuses);
+
+      // Sync orders with common statuses
+      const commonStatuses = [200, 210, 300, 320, 400, 450, 451, 500, 600]; // Open, On Hold, Picking, etc.
+      let totalSynced = 0;
+      let totalErrors = 0;
+
+      for (const status of commonStatuses) {
+        try {
+          console.log(`Syncing orders with status ${status}...`);
+          
+          const syncOrders = httpsCallable(functions, 'syncOngoingOrdersByStatus');
+          const result = await syncOrders({ status, limit: 50 });
+          
+          const data = result.data as any;
+
+          if (data.error) {
+            console.error(`Error syncing orders with status ${status}:`, data.error);
+            totalErrors++;
+          } else {
+            console.log(`Synced ${data.totalSynced} orders with status ${status}`);
+            totalSynced += data.totalSynced;
+          }
+        } catch (err: any) {
+          console.error(`Error syncing orders with status ${status}:`, err);
+          totalErrors++;
+        }
+      }
+
+      console.log(`Ongoing WMS sync completed. Total synced: ${totalSynced}, Errors: ${totalErrors}`);
+      
+      // Show success message with details
+      const message = `Ongoing WMS sync completed!\n\nDetails:\n- Orders Synced: ${totalSynced}\n- Errors: ${totalErrors}\n- Statuses checked: ${commonStatuses.join(', ')}`;
+      alert(message);
+
+      // Reload orders from database after sync
+      await loadOrdersFromDatabase();
+      
+    } catch (err: any) {
+      console.error('Error syncing orders from Ongoing WMS:', err);
+      
+      let userFriendlyError = err.message || 'Failed to sync orders from Ongoing WMS';
+      
+      if (userFriendlyError.includes('Ongoing WMS credentials not found')) {
+        userFriendlyError = 'Ongoing WMS credentials not found. Please configure your Ongoing WMS integration in Settings → Integrations.';
+      } else if (userFriendlyError.includes('Failed to send a request to the Edge Function')) {
+        userFriendlyError = 'Unable to connect to Ongoing WMS. Please check:\n\n' +
+          '1. Your Ongoing WMS credentials are configured correctly\n' +
+          '2. Your network connection is stable\n' +
+          '3. The Ongoing WMS API is accessible\n\n' +
+          'Go to Settings → Integrations to verify your configuration.';
+      }
+      
+      setError(userFriendlyError);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Load orders from database on component mount and when sync source changes
   useEffect(() => {
     loadOrdersFromDatabase();
-  }, []);
+  }, [syncSource]);
 
   const getStatusCounts = () => {
-    const processing = customerOrders.filter(o => o.wooStatus === 'processing').length;
-    const delvisLevert = customerOrders.filter(o => o.wooStatus === 'delvis-levert').length;
-    const onHold = customerOrders.filter(o => o.wooStatus === 'on-hold').length;
-    const pending = customerOrders.filter(o => o.wooStatus === 'pending').length;
-    const completed = customerOrders.filter(o => o.wooStatus === 'completed').length;
-    const totalBacklog = processing + delvisLevert + onHold + pending;
-    
-    return {
-      'total-backlog': totalBacklog,
-      'processing': processing,
-      'delvis-levert': delvisLevert,
-      'on-hold': onHold,
-      'pending': pending,
-      'completed': completed
-    };
+    if (syncSource === 'woocommerce') {
+      const processing = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'processing').length;
+      const delvisLevert = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'delvis-levert').length;
+      const onHold = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'on-hold').length;
+      const pending = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'pending').length;
+      const completed = customerOrders.filter(o => 'wooStatus' in o && o.wooStatus === 'completed').length;
+      const totalBacklog = processing + delvisLevert + onHold + pending;
+      
+      return {
+        'total-backlog': totalBacklog,
+        'processing': processing,
+        'delvis-levert': delvisLevert,
+        'on-hold': onHold,
+        'pending': pending,
+        'completed': completed
+      };
+    } else {
+      // Ongoing WMS status counts
+      const open = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 200).length;
+      const onHold = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 210).length;
+      const picking = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 300).length;
+      const assigned = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 320).length;
+      const picked = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 400).length;
+      const sent = customerOrders.filter(o => 'ongoingStatus' in o && o.ongoingStatus === 450).length;
+      const totalBacklog = open + onHold + picking + assigned + picked;
+      
+      return {
+        'total-backlog': totalBacklog,
+        'open': open,
+        'on-hold': onHold,
+        'picking': picking,
+        'assigned': assigned,
+        'picked': picked,
+        'sent': sent
+      };
+    }
   };
 
   const getDeliveryCounts = () => {
@@ -274,36 +325,113 @@ const CustomerOrdersTab: React.FC = () => {
     };
   };
 
-  const statusCounts = getStatusCounts();
-  const deliveryCounts = getDeliveryCounts();
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'text-green-700 bg-green-100';
-      case 'processing': return 'text-blue-700 bg-blue-100';
-      case 'delvis-levert': return 'text-purple-700 bg-purple-100';
-      case 'on-hold': return 'text-orange-700 bg-orange-100';
-      case 'pending': return 'text-yellow-700 bg-yellow-100';
-      case 'cancelled': return 'text-red-700 bg-red-100';
-      default: return 'text-gray-700 bg-gray-100';
+  const getStatusColor = (status: string | number) => {
+    if (syncSource === 'woocommerce') {
+      switch (status) {
+        case 'processing':
+        case 'delvis-levert':
+          return 'text-yellow-700 bg-yellow-100';
+        case 'completed':
+          return 'text-green-700 bg-green-100';
+        case 'on-hold':
+          return 'text-red-700 bg-red-100';
+        case 'pending':
+          return 'text-blue-700 bg-blue-100';
+        default:
+          return 'text-gray-700 bg-gray-100';
+      }
+    } else {
+      // Ongoing WMS status colors
+      switch (status) {
+        case 200: // Open
+          return 'text-blue-700 bg-blue-100';
+        case 210: // On Hold
+          return 'text-red-700 bg-red-100';
+        case 300: // Picking
+          return 'text-yellow-700 bg-yellow-100';
+        case 320: // Assigned
+          return 'text-purple-700 bg-purple-100';
+        case 400: // Picked
+          return 'text-green-700 bg-green-100';
+        case 450: // Sent
+          return 'text-green-700 bg-green-100';
+        case 451: // Partially Sent
+          return 'text-orange-700 bg-orange-100';
+        case 500: // Collected
+          return 'text-green-700 bg-green-100';
+        case 600: // Waiting for customer
+          return 'text-gray-700 bg-gray-100';
+        default:
+          return 'text-gray-700 bg-gray-100';
+      }
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return CheckCircle;
-      case 'processing': return Package;
-      case 'delvis-levert': return Truck;
-      case 'on-hold': return Clock;
-      case 'pending': return AlertTriangle;
-      case 'cancelled': return XCircle;
-      default: return Package;
+  const getStatusIcon = (status: string | number) => {
+    if (syncSource === 'woocommerce') {
+      switch (status) {
+        case 'processing':
+        case 'delvis-levert':
+          return <Clock className="w-4 h-4" />;
+        case 'completed':
+          return <CheckCircle className="w-4 h-4" />;
+        case 'on-hold':
+          return <XCircle className="w-4 h-4" />;
+        case 'pending':
+          return <AlertTriangle className="w-4 h-4" />;
+        default:
+          return <Package className="w-4 h-4" />;
+      }
+    } else {
+      // Ongoing WMS status icons
+      switch (status) {
+        case 200: // Open
+          return <Package className="w-4 h-4" />;
+        case 210: // On Hold
+          return <XCircle className="w-4 h-4" />;
+        case 300: // Picking
+          return <Truck className="w-4 h-4" />;
+        case 320: // Assigned
+          return <User className="w-4 h-4" />;
+        case 400: // Picked
+          return <CheckCircle className="w-4 h-4" />;
+        case 450: // Sent
+          return <CheckCircle className="w-4 h-4" />;
+        case 451: // Partially Sent
+          return <AlertTriangle className="w-4 h-4" />;
+        case 500: // Collected
+          return <CheckCircle className="w-4 h-4" />;
+        case 600: // Waiting for customer
+          return <Clock className="w-4 h-4" />;
+        default:
+          return <Package className="w-4 h-4" />;
+      }
     }
   };
 
-  const getOrderDeliveryStatus = (order: CustomerOrder) => {
+  const getStatusText = (status: string | number) => {
+    if (syncSource === 'woocommerce') {
+      return status as string;
+    } else {
+      // Ongoing WMS status text
+      switch (status) {
+        case 200: return 'Open';
+        case 210: return 'On Hold';
+        case 300: return 'Picking';
+        case 320: return 'Assigned';
+        case 400: return 'Picked';
+        case 450: return 'Sent';
+        case 451: return 'Partially Sent';
+        case 500: return 'Collected';
+        case 600: return 'Waiting for customer';
+        default: return `Status ${status}`;
+      }
+    }
+  };
+
+  const getOrderDeliveryStatus = (order: OrderData) => {
     if (!order.orderLines || order.orderLines.length === 0) {
-      return 'pending-delivery';
+      return { status: 'pending', text: 'Pending', color: 'text-gray-600' };
     }
 
     const deliveredLines = order.orderLines.filter(line => line.deliveryStatus === 'delivered').length;
@@ -311,39 +439,20 @@ const CustomerOrdersTab: React.FC = () => {
     const totalLines = order.orderLines.length;
 
     if (deliveredLines === totalLines) {
-      return 'fully-delivered';
+      return { status: 'delivered', text: 'Delivered', color: 'text-green-600' };
     } else if (deliveredLines > 0 || partialLines > 0) {
-      return 'partially-delivered';
+      return { status: 'partial', text: 'Partially Delivered', color: 'text-yellow-600' };
     } else {
-      return 'pending-delivery';
+      return { status: 'pending', text: 'Pending', color: 'text-gray-600' };
     }
   };
 
-  const filteredOrders = customerOrders.filter(order => {
-    const matchesSearch = order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || order.wooStatus === statusFilter;
-    
-    // For delivery filter, we need to calculate the delivery status on the fly
-    // since we're not eagerly loading order_lines for all orders
-    let matchesDelivery = true;
-    if (deliveryFilter !== 'all' && order.orderLines) {
-      const orderDeliveryStatus = getOrderDeliveryStatus(order);
-      matchesDelivery = orderDeliveryStatus === deliveryFilter;
-    } else if (deliveryFilter !== 'all') {
-      // If we don't have order_lines and a delivery filter is set, assume it doesn't match
-      matchesDelivery = false;
-    }
-    
-    return matchesSearch && matchesStatus && matchesDelivery;
-  });
-
   const handleStatusFilterClick = (status: string) => {
-    setStatusFilter(statusFilter === status ? 'all' : status);
+    setStatusFilter(status);
   };
 
   const handleDeliveryFilterClick = (status: string) => {
-    setDeliveryFilter(deliveryFilter === status ? 'all' : status);
+    setDeliveryFilter(status);
   };
 
   const handleRefresh = () => {
@@ -351,13 +460,17 @@ const CustomerOrdersTab: React.FC = () => {
   };
 
   const handleSync = () => {
-    syncOrdersFromWooCommerce();
+    if (syncSource === 'woocommerce') {
+      syncOrdersFromWooCommerce();
+    } else {
+      syncOrdersFromOngoingWMS();
+    }
   };
 
-  const handleOrderClick = async (order: CustomerOrder) => {
+  const handleOrderClick = async (order: OrderData) => {
     // If order lines are not loaded yet, load them
     if (!order.orderLines || order.orderLines.length === 0) {
-      const orderLines = await loadOrderLines(order.id);
+      const orderLines = await loadOrderLines(order.id, syncSource);
       
       // Create a copy of the order with order lines
       const orderWithLines = {
@@ -365,7 +478,7 @@ const CustomerOrdersTab: React.FC = () => {
         orderLines
       };
       
-      setSelectedOrder(orderWithLines);
+      setSelectedOrder(orderWithLines as OrderData);
     } else {
       setSelectedOrder(order);
     }
@@ -387,6 +500,26 @@ const CustomerOrdersTab: React.FC = () => {
     return new Date(dateString).toLocaleDateString('no-NO');
   };
 
+  // Filter orders based on search and status
+  const filteredOrders = customerOrders.filter(order => {
+    const matchesSearch = order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         order.customerName.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    let matchesStatus = true;
+    if (statusFilter !== 'all') {
+      if (syncSource === 'woocommerce') {
+        matchesStatus = 'wooStatus' in order && order.wooStatus === statusFilter;
+      } else {
+        matchesStatus = 'ongoingStatus' in order && order.ongoingStatus === parseInt(statusFilter);
+      }
+    }
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  const statusCounts = getStatusCounts();
+  const deliveryCounts = getDeliveryCounts();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -406,14 +539,34 @@ const CustomerOrdersTab: React.FC = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
-          <button 
-            onClick={handleSync}
-            disabled={loading || syncing}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            <span>{syncing ? 'Syncing...' : 'Sync from WooCommerce'}</span>
-          </button>
+          
+          {/* Sync Source Selector */}
+          <div className="flex items-center space-x-2">
+            <select
+              value={syncSource}
+              onChange={(e) => setSyncSource(e.target.value as 'woocommerce' | 'ongoing_wms')}
+              disabled={syncing}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              <option value="ongoing_wms">Ongoing WMS</option>
+              <option value="woocommerce">WooCommerce</option>
+            </select>
+            
+            <button 
+              onClick={handleSync}
+              disabled={loading || syncing}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+              <span>
+                {syncing 
+                  ? `Syncing from ${syncSource === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}...` 
+                  : `Sync from ${syncSource === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}`
+                }
+              </span>
+            </button>
+          </div>
+          
           <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2">
             <Plus className="w-4 h-4" />
             <span>New Order</span>
@@ -427,7 +580,10 @@ const CustomerOrdersTab: React.FC = () => {
           <div className="flex items-center justify-center space-x-3">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
             <span className="text-gray-600">
-              {syncing ? 'Syncing orders from WooCommerce...' : 'Loading orders...'}
+              {syncing 
+                ? `Syncing orders from ${syncSource === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}...` 
+                : 'Loading orders...'
+              }
             </span>
           </div>
         </div>
@@ -449,10 +605,10 @@ const CustomerOrdersTab: React.FC = () => {
                   Try loading from database
                 </button>
                 <button 
-                  onClick={handleSync}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                  onClick={() => setError(null)}
+                  className="text-red-600 hover:text-red-800 text-sm font-medium"
                 >
-                  Try sync again
+                  Dismiss
                 </button>
               </div>
             </div>
@@ -647,7 +803,8 @@ const CustomerOrdersTab: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {filteredOrders.map((order) => {
-                    const StatusIcon = getStatusIcon(order.wooStatus);
+                    const status = 'wooStatus' in order ? order.wooStatus : order.ongoingStatus;
+                    const StatusIcon = getStatusIcon(status);
                     
                     return (
                       <tr 
@@ -670,9 +827,9 @@ const CustomerOrdersTab: React.FC = () => {
                           )}
                         </td>
                         <td className="py-4 px-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.wooStatus)}`}>
-                            <StatusIcon className="w-3 h-3 mr-1" />
-                            {order.wooStatus.replace('-', ' ')}
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
+                            {StatusIcon}
+                            <span className="ml-1">{getStatusText(status)}</span>
                           </span>
                         </td>
                         <td className="py-4 px-4">
@@ -723,7 +880,7 @@ const CustomerOrdersTab: React.FC = () => {
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center space-x-2">
-                            {order.permalink && (
+                            {'permalink' in order && order.permalink && (
                               <a
                                 href={order.permalink}
                                 target="_blank"
