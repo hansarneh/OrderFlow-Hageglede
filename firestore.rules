@@ -57,3 +57,14 @@ service cloud.firestore {
     }
   }
 }
+    // Allow authenticated users to read Ongoing WMS orders
+    match /ongoingOrders/{orderId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Allow authenticated users to read Ongoing WMS purchase orders
+    match /ongoingPurchaseOrders/{purchaseOrderId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role == 'admin');
+    }
