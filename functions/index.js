@@ -889,24 +889,30 @@ exports.fetchOngoingWarehouses = functions.https.onCall(async (data, context) =>
 // Helper function to get Ongoing WMS credentials
 async function getOngoingWMSCredentials() {
   const integrationsRef = admin.firestore().collection('integrations');
-  const ongoingWMSDoc = await integrationsRef.doc('ongoing_wms').get();
   
-  if (!ongoingWMSDoc.exists) {
+  // Query for Ongoing WMS integration by type
+  const querySnapshot = await integrationsRef
+    .where('integrationType', '==', 'ongoing_wms')
+    .limit(1)
+    .get();
+  
+  if (querySnapshot.empty) {
     throw new functions.https.HttpsError('not-found', 'Ongoing WMS credentials not found');
   }
 
-  const credentials = ongoingWMSDoc.data();
-  const { username, password, baseUrl } = credentials;
+  const doc = querySnapshot.docs[0];
+  const data = doc.data();
+  const credentials = data.credentials;
 
-  if (!username || !password || !baseUrl) {
+  if (!credentials || !credentials.username || !credentials.password || !credentials.baseUrl) {
     throw new functions.https.HttpsError('invalid-argument', 'Missing Ongoing WMS credentials');
   }
 
   // Create Basic Auth header
-  const authString = `${username}:${password}`;
+  const authString = `${credentials.username}:${credentials.password}`;
   const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
 
-  return { authHeader, baseUrl };
+  return { authHeader, baseUrl: credentials.baseUrl };
 }
 
 // Helper function to transform Ongoing WMS order to Firestore format

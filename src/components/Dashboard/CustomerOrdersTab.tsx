@@ -684,8 +684,6 @@ const CustomerOrdersTab: React.FC = () => {
                 : `Sync ${activeTab === 'combined' ? 'All Sources' : activeTab === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}`
               }
             </span>
-            {/* Debug info */}
-            <span className="text-xs text-gray-400">(Tab: {activeTab})</span>
           </button>
           
           <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2">
