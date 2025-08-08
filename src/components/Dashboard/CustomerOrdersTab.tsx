@@ -780,13 +780,23 @@ const CustomerOrdersTab: React.FC = () => {
             <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-gray-900 font-medium mb-2">No orders found</h3>
             <p className="text-gray-600 text-sm mb-4">
-              Sync orders from your WooCommerce store to get started. Only orders with status "processing" or "delvis-levert" will be imported.
+              {activeTab === 'woocommerce' 
+                ? 'Sync orders from your WooCommerce store to get started. Only orders with status "processing" or "delvis-levert" will be imported.'
+                : activeTab === 'ongoing_wms'
+                ? 'Sync orders from your Ongoing WMS system to get started. Only active orders (not fulfilled) will be imported.'
+                : 'Sync orders from your systems to get started.'
+              }
             </p>
             <button 
               onClick={handleSync}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
             >
-              Sync Orders from WooCommerce
+              {activeTab === 'woocommerce' 
+                ? 'Sync Orders from WooCommerce'
+                : activeTab === 'ongoing_wms'
+                ? 'Sync Orders from Ongoing WMS'
+                : 'Sync All Sources'
+              }
             </button>
           </div>
         </div>
