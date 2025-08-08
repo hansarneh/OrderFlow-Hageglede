@@ -72,3 +72,4 @@ If you encounter authentication errors during deployment:
    - Make sure your service account key file exists and is correctly referenced
    - Check that the JSON content is valid and complete
    - Ensure the service account has not been deleted or disabled# Updated deployment - Fri Aug  8 10:28:45 CEST 2025
+# Fixed email configuration - Fri Aug  8 10:39:11 CEST 2025
