@@ -45,6 +45,8 @@ const CustomerOrdersTab: React.FC = () => {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [isLoadingLines, setIsLoadingLines] = useState(false);
   const [activeTab, setActiveTab] = useState<OrderSource>('ongoing_wms');
+  
+  console.log('CustomerOrdersTab rendered with activeTab:', activeTab);
 
   // Load orders from Firestore database without order lines
   const loadOrdersFromDatabase = async () => {
@@ -645,8 +647,10 @@ const CustomerOrdersTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* TEST INDICATOR */}
-      <div className="bg-red-500 text-white p-4 rounded-lg text-center font-bold">
+      <div className="bg-red-500 text-white p-4 rounded-lg text-center font-bold text-2xl">
         🚨 NEW VERSION DEPLOYED - TABS SHOULD BE VISIBLE BELOW 🚨
+        <br />
+        <span className="text-sm">Timestamp: {new Date().toISOString()}</span>
       </div>
       
       {/* Header with Tabs */}
