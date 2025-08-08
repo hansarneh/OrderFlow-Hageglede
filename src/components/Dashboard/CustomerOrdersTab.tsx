@@ -644,10 +644,15 @@ const CustomerOrdersTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* TEST INDICATOR */}
+      <div className="bg-red-500 text-white p-4 rounded-lg text-center font-bold">
+        🚨 NEW VERSION DEPLOYED - TABS SHOULD BE VISIBLE BELOW 🚨
+      </div>
+      
       {/* Header with Tabs */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Customer Orders</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Customer Orders - NEW VERSION</h1>
           <p className="text-gray-600 mt-2">Manage and track customer orders with delivery status</p>
           {lastSyncTime && (
             <p className="text-sm text-gray-500 mt-1">Last updated: {lastSyncTime}</p>
