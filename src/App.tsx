@@ -5,7 +5,7 @@ import DashboardLayout from './components/Layout/DashboardLayout';
 import OverviewTab from './components/Dashboard/OverviewTab';
 import ProductsTab from './components/Dashboard/ProductsTab';
 import BackorderedProductsTab from './components/Dashboard/BackorderedProductsTab';
-import CustomerOrdersTab from './components/Dashboard/CustomerOrdersTab';
+import CustomerOrdersTabNew from './components/Dashboard/CustomerOrdersTabNew';
 // import OrderMappingTab from './components/Dashboard/OrderMappingTab';
 import OrdersAtRiskTab from './components/Dashboard/OrdersAtRiskTab';
 import SettingsTab from './components/Dashboard/SettingsTab';
@@ -31,7 +31,7 @@ const DashboardContent: React.FC = () => {
       case 'backordered-products':
         return <BackorderedProductsTab />;
       case 'customer-orders':
-        return <CustomerOrdersTab />;
+        return <CustomerOrdersTabNew />;
       case 'order-mappings':
         return <div>Order Mappings (Coming Soon)</div>;
       case 'orders-at-risk':
