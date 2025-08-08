@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Play, 
-  Pause, 
-  Target, 
-  BarChart3, 
-  CheckCircle, 
-  AlertTriangle, 
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Play,
+  Pause,
+  Target,
+  BarChart3,
+  CheckCircle,
+  AlertTriangle,
   Loader2,
   RefreshCw,
   Database,
@@ -45,7 +45,8 @@ interface SyncProgress {
 const InitialSyncTab: React.FC = () => {
   const { user } = useAuth();
   const functions = getFunctions();
-  
+  const cancellationRef = useRef<boolean>(false);
+
   const [syncConfig, setSyncConfig] = useState<SyncConfig>({
     source: 'ongoing_wms',
     strategy: 'known-orders-first',
@@ -82,6 +83,9 @@ const InitialSyncTab: React.FC = () => {
       return;
     }
 
+    // Reset cancellation flag
+    cancellationRef.current = false;
+
     setError(null);
     setSuccess(null);
     setSyncProgress({
@@ -99,18 +103,30 @@ const InitialSyncTab: React.FC = () => {
 
     try {
       if (syncConfig.source === 'ongoing_wms' || syncConfig.source === 'both') {
+        if (cancellationRef.current) {
+          addLog('Sync cancelled by user');
+          return;
+        }
         await syncOngoingWMS();
       }
 
       if (syncConfig.source === 'woocommerce' || syncConfig.source === 'both') {
+        if (cancellationRef.current) {
+          addLog('Sync cancelled by user');
+          return;
+        }
         await syncWooCommerce();
       }
 
-      setSuccess('Initial sync completed successfully!');
-      addLog('Initial sync completed successfully!');
+      if (!cancellationRef.current) {
+        setSuccess('Initial sync completed successfully!');
+        addLog('Initial sync completed successfully!');
+      }
     } catch (err: any) {
-      setError(err.message || 'Sync failed');
-      addLog(`Error: ${err.message}`);
+      if (!cancellationRef.current) {
+        setError(err.message || 'Sync failed');
+        addLog(`Error: ${err.message}`);
+      }
     } finally {
       setSyncProgress(prev => ({ ...prev, isRunning: false }));
     }
@@ -124,6 +140,12 @@ const InitialSyncTab: React.FC = () => {
     let totalErrors = 0;
 
     for (let i = 0; i < syncConfig.statuses.length; i++) {
+      // Check for cancellation before each status
+      if (cancellationRef.current) {
+        addLog('Ongoing WMS sync cancelled by user');
+        return;
+      }
+
       const status = syncConfig.statuses[i];
       const progress = ((i + 1) / totalStatuses) * 100;
       
@@ -145,6 +167,12 @@ const InitialSyncTab: React.FC = () => {
           goodsOwnerId: 85
         });
 
+        // Check for cancellation after the function call
+        if (cancellationRef.current) {
+          addLog('Ongoing WMS sync cancelled by user');
+          return;
+        }
+
         const data = result.data as any;
         if (data.success) {
           totalSynced += data.totalSynced;
@@ -155,18 +183,22 @@ const InitialSyncTab: React.FC = () => {
           addLog(`Status ${status}: Failed to sync`);
         }
       } catch (err: any) {
-        totalErrors++;
-        addLog(`Status ${status}: Error - ${err.message}`);
+        if (!cancellationRef.current) {
+          totalErrors++;
+          addLog(`Status ${status}: Error - ${err.message}`);
+        }
       }
     }
 
-    setSyncProgress(prev => ({
-      ...prev,
-      syncedOrders: totalSynced,
-      errors: totalErrors
-    }));
+    if (!cancellationRef.current) {
+      setSyncProgress(prev => ({
+        ...prev,
+        syncedOrders: totalSynced,
+        errors: totalErrors
+      }));
 
-    addLog(`Ongoing WMS sync completed: ${totalSynced} orders synced, ${totalErrors} errors`);
+      addLog(`Ongoing WMS sync completed: ${totalSynced} orders synced, ${totalErrors} errors`);
+    }
   };
 
   const syncWooCommerce = async () => {
@@ -185,6 +217,12 @@ const InitialSyncTab: React.FC = () => {
         dateRange: 'last-200-days'
       });
 
+      // Check for cancellation after the function call
+      if (cancellationRef.current) {
+        addLog('WooCommerce sync cancelled by user');
+        return;
+      }
+
       const data = result.data as any;
       if (data.success) {
         addLog(`WooCommerce sync completed: ${data.syncedCount} orders synced`);
@@ -192,13 +230,33 @@ const InitialSyncTab: React.FC = () => {
         addLog('WooCommerce sync failed');
       }
     } catch (err: any) {
-      addLog(`WooCommerce sync error: ${err.message}`);
+      if (!cancellationRef.current) {
+        addLog(`WooCommerce sync error: ${err.message}`);
+      }
     }
   };
 
-  const stopSync = () => {
+  const stopSync = async () => {
+    // Set cancellation flag
+    cancellationRef.current = true;
+    
+    // Set cancellation flag in Firestore for the Firebase Function to check
+    try {
+      const { doc, setDoc } = await import('firebase/firestore');
+      const { getFirestore } = await import('firebase/firestore');
+      const db = getFirestore();
+      
+      await setDoc(doc(db, 'syncCancellation', user?.id || 'unknown'), {
+        cancelled: true,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      console.log('Could not set cancellation flag:', error);
+    }
+    
     setSyncProgress(prev => ({ ...prev, isRunning: false }));
-    addLog('Sync stopped by user');
+    addLog('Sync cancellation requested...');
+    addLog('Note: Firebase Functions may continue running for a few seconds');
   };
 
   const clearLogs = () => {

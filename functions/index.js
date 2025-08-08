@@ -1062,7 +1062,7 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { status, goodsOwnerId = 85, limit = 50 } = data;
+    const { status, goodsOwnerId = 85, limit = 20 } = data;
 
     if (!status) {
       throw new functions.https.HttpsError('invalid-argument', 'Status is required');
@@ -1072,29 +1072,67 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
 
     console.log(`Syncing orders with status: ${status}, goodsOwnerId: ${goodsOwnerId}, limit: ${limit}`);
 
-    // For now, we'll use a more efficient approach - test only recent order IDs
-    // This is a temporary solution until we find a better way to list orders by status
     const syncedOrders = [];
     const errors = [];
     
-    // Test recent order IDs (last 1000 orders)
-    const startOrderId = 216000; // Recent orders
-    const endOrderId = 217000;
-    const batchSize = 5; // Smaller batches to avoid timeouts
+    // Start with known order IDs that we know exist
+    const knownOrderIds = [214600, 216042];
+    
+    // Also test a small range around these known orders
+    const testRanges = [
+      // Around known order 214600
+      { start: 214590, end: 214610 },
+      // Around known order 216042  
+      { start: 216030, end: 216060 }
+    ];
+    
+    // Combine known orders and test ranges
+    const orderIdsToTest = [...knownOrderIds];
+    testRanges.forEach(range => {
+      for (let i = range.start; i <= range.end; i++) {
+        if (!orderIdsToTest.includes(i)) {
+          orderIdsToTest.push(i);
+        }
+      }
+    });
 
-    for (let i = startOrderId; i <= endOrderId && syncedOrders.length < limit; i += batchSize) {
-      const batch = [];
-      for (let j = 0; j < batchSize && i + j <= endOrderId; j++) {
-        batch.push(i + j);
+    console.log(`Testing ${orderIdsToTest.length} order IDs for status ${status}`);
+
+    // Test orders in small batches
+    const batchSize = 3; // Very small batches to avoid timeouts
+    
+    for (let i = 0; i < orderIdsToTest.length && syncedOrders.length < limit; i += batchSize) {
+      // Check for cancellation by looking for a cancellation flag in Firestore
+      try {
+        const cancellationDoc = await db.collection('syncCancellation').doc(context.auth.uid).get();
+        if (cancellationDoc.exists && cancellationDoc.data().cancelled) {
+          console.log('Sync cancelled by user');
+          // Clear the cancellation flag
+          await db.collection('syncCancellation').doc(context.auth.uid).delete();
+          return {
+            success: true,
+            cancelled: true,
+            message: 'Sync cancelled by user',
+            syncedOrders: syncedOrders,
+            totalSynced: syncedOrders.length,
+            errors: errors
+          };
+        }
+      } catch (error) {
+        console.log('Could not check cancellation flag:', error.message);
       }
 
-      // Fetch orders in parallel with timeout
+      const batch = orderIdsToTest.slice(i, i + batchSize);
+      
+      console.log(`Testing batch: ${batch.join(', ')}`);
+
+      // Fetch orders in parallel with strict timeout
       const promises = batch.map(async (orderId) => {
         try {
           const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
           
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+          const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
           
           const response = await fetch(apiUrl, {
             method: 'GET',
@@ -1113,6 +1151,8 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
             
             // Check if order matches the requested status
             if (order.orderInfo?.orderStatus?.number === status) {
+              console.log(`Found matching order: ${orderId} (${order.orderInfo.orderNumber})`);
+              
               const firestoreOrder = transformOngoingOrderToFirestore(order);
               
               // Store order in Firestore
@@ -1155,10 +1195,14 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
               });
               
               console.log(`Synced order ${orderId} (${order.orderInfo.orderNumber}) with ${order.orderLines?.length || 0} order lines`);
+            } else {
+              console.log(`Order ${orderId} status ${order.orderInfo?.orderStatus?.number} doesn't match requested ${status}`);
             }
           } else if (response.status === 404) {
             // Order doesn't exist, skip silently
             console.log(`Order ${orderId} not found, skipping`);
+          } else {
+            console.log(`Order ${orderId} returned status ${response.status}`);
           }
         } catch (error) {
           if (error.name === 'AbortError') {
@@ -1174,7 +1218,7 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
       await Promise.all(promises);
       
       // Small delay to avoid overwhelming the API
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     console.log(`Sync completed. Synced ${syncedOrders.length} orders, ${errors.length} errors`);
