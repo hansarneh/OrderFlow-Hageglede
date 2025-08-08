@@ -9,58 +9,9 @@ import {
   Clock, 
   XCircle,
   ExternalLink,
-  User,
-  DollarSign,
-  ShoppingBag
+  User
 } from 'lucide-react';
-
-interface OrderLine {
-  id: string;
-  order_id: string;
-  woocommerce_line_item_id: number;
-  product_id: number;
-  product_name: string;
-  sku: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
-  tax_amount: number;
-  meta_data: any;
-  delivered_quantity: number;
-  delivery_date: string | null;
-  delivery_status: 'pending' | 'partial' | 'delivered' | 'cancelled';
-  partial_delivery_details: any;
-}
-
-interface CustomerOrder {
-  id: string;
-  woocommerce_order_id: number;
-  order_number: string;
-  customer_name: string;
-  woo_status: string;
-  total_value: number;
-  total_items: number;
-  date_created: string;
-  line_items: Array<{
-    id: number;
-    name: string;
-    product_id: number;
-    quantity: number;
-    total: string;
-    sku: string;
-  }>;
-  meta_data: any;
-  billing_address: string;
-  billing_address_json: any;
-  permalink: string | null;
-  created_at: string;
-  updated_at: string;
-  delivery_type: string | null;
-  shipping_method_title: string | null;
-  delivery_date: string | null;
-  order_lines?: OrderLine[];
-  isLoadingLines?: boolean;
-}
+import { CustomerOrder, OrderLine } from '../../../lib/firebaseUtils';
 
 interface OrderDetailsModalProps {
   isOpen: boolean;
@@ -135,7 +86,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
     }
   };
 
-  const StatusIcon = getStatusIcon(order.woo_status);
+  const StatusIcon = getStatusIcon(order.wooStatus);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -148,13 +99,13 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-3">
-                <h2 className="text-xl font-bold text-gray-900">Order #{order.order_number}</h2>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.woo_status)}`}>
+                <h2 className="text-xl font-bold text-gray-900">Order #{order.orderNumber}</h2>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.wooStatus)}`}>
                   <StatusIcon className="w-3 h-3 mr-1" />
-                  {order.woo_status.replace('-', ' ')}
+                  {order.wooStatus.replace('-', ' ')}
                 </span>
               </div>
-              <p className="text-sm text-gray-600 mt-1">ID: {order.woocommerce_order_id}</p>
+              <p className="text-sm text-gray-600 mt-1">ID: {order.woocommerceOrderId}</p>
             </div>
           </div>
           <button
@@ -175,11 +126,11 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                 <div className="bg-gray-50 rounded-lg p-4">
                   <div className="flex items-center space-x-2 mb-2">
                     <User className="w-4 h-4 text-gray-500" />
-                    <span className="font-medium text-gray-900">{order.customer_name}</span>
+                    <span className="font-medium text-gray-900">{order.customerName}</span>
                   </div>
-                  {order.billing_address && (
+                  {order.billingAddress && (
                     <div className="text-sm text-gray-600 ml-6 whitespace-pre-line">
-                      {order.billing_address}
+                      {order.billingAddress}
                     </div>
                   )}
                 </div>
@@ -190,15 +141,15 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                 <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Created Date:</span>
-                    <span className="font-medium text-gray-900">{formatDate(order.date_created)}</span>
+                    <span className="font-medium text-gray-900">{formatDate(order.dateCreated)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Value:</span>
-                    <span className="font-medium text-gray-900">{formatCurrency(order.total_value)}</span>
+                    <span className="font-medium text-gray-900">{formatCurrency(order.totalValue)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Items:</span>
-                    <span className="font-medium text-gray-900">{order.total_items}</span>
+                    <span className="font-medium text-gray-900">{order.totalItems}</span>
                   </div>
                   {order.permalink && (
                     <div className="pt-2">
@@ -221,22 +172,22 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
               <div>
                 <h3 className="text-sm font-medium text-gray-500 mb-2">Delivery Information</h3>
                 <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                  {order.delivery_date && (
+                  {order.deliveryDate && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">Delivery Date:</span>
-                      <span className="font-medium text-gray-900">{formatDate(order.delivery_date)}</span>
+                      <span className="font-medium text-gray-900">{formatDate(order.deliveryDate)}</span>
                     </div>
                   )}
-                  {order.delivery_type && (
+                  {order.deliveryType && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">Delivery Type:</span>
-                      <span className="font-medium text-gray-900">{order.delivery_type}</span>
+                      <span className="font-medium text-gray-900">{order.deliveryType}</span>
                     </div>
                   )}
-                  {order.shipping_method_title && (
+                  {order.shippingMethodTitle && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">Shipping Method:</span>
-                      <span className="font-medium text-gray-900">{order.shipping_method_title}</span>
+                      <span className="font-medium text-gray-900">{order.shippingMethodTitle}</span>
                     </div>
                   )}
                 </div>
@@ -255,15 +206,15 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                   <p className="text-gray-600">Loading order lines...</p>
                 </div>
               </div>
-            ) : order.order_lines && order.order_lines.length > 0 ? (
+                          ) : order.orderLines && order.orderLines.length > 0 ? (
               <div className="space-y-4">
-                {order.order_lines.map((line) => {
-                  const DeliveryIcon = getDeliveryStatusIcon(line.delivery_status);
+                {order.orderLines?.map((line) => {
+                  const DeliveryIcon = getDeliveryStatusIcon(line.deliveryStatus);
                   return (
                     <div key={line.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow duration-200">
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
                         <div className="md:col-span-4">
-                          <div className="font-medium text-gray-900">{line.product_name}</div>
+                          <div className="font-medium text-gray-900">{line.productName}</div>
                           {line.sku && (
                             <div className="text-xs text-gray-500 flex items-center space-x-1 mt-1">
                               <Box className="w-3 h-3" />
@@ -277,41 +228,41 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                           <div className="flex items-center space-x-2">
                             <span className="font-medium">{line.quantity}</span>
                             <span className="text-gray-400">×</span>
-                            <span className="text-sm">{formatCurrency(line.unit_price)}</span>
+                            <span className="text-sm">{formatCurrency(line.unitPrice)}</span>
                           </div>
                         </div>
                         
                         <div className="md:col-span-2 flex flex-col items-center">
                           <div className="text-sm text-gray-600">Delivered</div>
-                          <div className="font-medium text-green-600">{line.delivered_quantity}</div>
+                          <div className="font-medium text-green-600">{line.deliveredQuantity}</div>
                         </div>
                         
                         <div className="md:col-span-2 flex flex-col items-center">
                           <div className="text-sm text-gray-600">Status</div>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDeliveryStatusColor(line.delivery_status)}`}>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getDeliveryStatusColor(line.deliveryStatus)}`}>
                             <DeliveryIcon className="w-3 h-3 mr-1" />
-                            {line.delivery_status}
+                            {line.deliveryStatus}
                           </span>
                         </div>
                         
                         <div className="md:col-span-2 flex flex-col items-center">
                           <div className="text-sm text-gray-600">Total</div>
-                          <div className="font-medium text-blue-600">{formatCurrency(line.total_price)}</div>
+                          <div className="font-medium text-blue-600">{formatCurrency(line.totalPrice)}</div>
                         </div>
                       </div>
                       
                       {/* Delivery Details */}
-                      {(line.delivery_date || line.partial_delivery_details) && (
+                      {(line.deliveryDate || line.partialDeliveryDetails) && (
                         <div className="mt-3 pt-3 border-t border-gray-100">
                           <div className="flex items-start space-x-4">
-                            {line.delivery_date && (
+                            {line.deliveryDate && (
                               <div className="flex items-center space-x-1 text-sm text-gray-600">
                                 <Calendar className="w-3 h-3 text-gray-400" />
-                                <span>Delivery: {formatDate(line.delivery_date)}</span>
+                                <span>Delivery: {formatDate(line.deliveryDate)}</span>
                               </div>
                             )}
                             
-                            {line.partial_delivery_details && line.partial_delivery_details.length > 0 && (
+                            {line.partialDeliveryDetails && line.partialDeliveryDetails.length > 0 && (
                               <div className="flex items-center space-x-1 text-sm text-gray-600">
                                 <Truck className="w-3 h-3 text-gray-400" />
                                 <span>Partial delivery details available</span>
@@ -334,11 +285,11 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
           </div>
 
           {/* Additional Meta Data - Moved below order lines */}
-          {order.meta_data && typeof order.meta_data === 'object' && Object.keys(order.meta_data).length > 0 && (
+          {order.metaData && typeof order.metaData === 'object' && Object.keys(order.metaData).length > 0 && (
             <div className="mt-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h3>
               <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                {Object.entries(order.meta_data).map(([key, value]) => {
+                {Object.entries(order.metaData).map(([key, value]) => {
                   // Skip keys that are already displayed elsewhere
                   if (key === '_delivery_date' || key === '_delivery_type' || key === '_shipping_method_title') {
                     return null;

@@ -255,6 +255,10 @@ export interface CustomerOrder {
   shippingMethodTitle: string | null;
   deliveryDate: string | null;
   orderLines?: OrderLine[];
+  isAtRisk?: boolean;
+  riskReason?: string;
+  riskLevel?: 'high' | 'medium' | 'low';
+  daysSinceDeliveryDate?: number;
 }
 
 export interface OrderLine {
@@ -477,7 +481,7 @@ export const getOrdersAtRisk = async (): Promise<CustomerOrder[]> => {
     }));
     
     // Filter to only at-risk orders
-    const atRiskOrders = processedOrders.filter(order => order.isAtRisk);
+    const atRiskOrders = processedOrders.filter(order => order.isAtRisk) as CustomerOrder[];
     
     return atRiskOrders;
   } catch (error) {

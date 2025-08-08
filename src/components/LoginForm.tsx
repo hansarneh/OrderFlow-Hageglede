@@ -27,7 +27,7 @@ const LoginForm: React.FC = () => {
         console.error('Error testing connectivity:', err);
         setConnectivityStatus({
           success: false,
-          message: 'Error testing connectivity: ' + (err.message || 'Unknown error')
+          message: 'Error testing connectivity: ' + ((err as Error).message || 'Unknown error')
         });
       } finally {
         setIsTestingConnectivity(false);

@@ -428,7 +428,7 @@ const BackorderedProductsTab: React.FC = () => {
                     >
                       <option value="all">All Product Types</option>
                       {allProdukttypes.map((produkttype) => (
-                        <option key={produkttype} value={produkttype}>{produkttype}</option>
+                        <option key={produkttype} value={produkttype || ''}>{produkttype}</option>
                       ))}
                     </select>
                   </div>

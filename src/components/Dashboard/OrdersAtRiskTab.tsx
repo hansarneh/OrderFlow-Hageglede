@@ -11,59 +11,10 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { getOrdersAtRisk, getOrderLines } from '../../lib/firebaseUtils';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../lib/firebaseClient';
+import { getOrdersAtRisk, getOrderLines, CustomerOrder, OrderLine } from '../../lib/firebaseUtils';
 import OrderDetailsModal from './CustomerOrders/OrderDetailsModal';
 
-interface OrderLine {
-  id: string;
-  order_id: string;
-  woocommerce_line_item_id: number;
-  product_id: number;
-  product_name: string;
-  sku: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
-  tax_amount: number;
-  meta_data: any;
-  delivered_quantity: number;
-  delivery_date: string | null;
-  delivery_status: 'pending' | 'partial' | 'delivered' | 'cancelled';
-  partial_delivery_details: any;
-  product?: {
-    id: string;
-    woocommerce_id: number;
-    name: string;
-    sku: string | null;
-    stock_quantity: number;
-    stock_status: string;
-    produkttype: string | null;
-  };
-}
-
-interface CustomerOrder {
-  id: string;
-  woocommerce_order_id: number;
-  order_number: string;
-  customer_name: string;
-  woo_status: string;
-  total_value: number;
-  total_items: number;
-  date_created: string;
-  permalink: string | null;
-  delivery_date: string | null;
-  delivery_type: string | null;
-  shipping_method_title: string | null;
-  order_lines?: OrderLine[];
-  isAtRisk?: boolean;
-  riskReason?: string;
-  riskLevel?: 'high' | 'medium' | 'low';
-  daysSinceDeliveryDate?: number;
-}
-
-type SortField = 'order_number' | 'customer_name' | 'woo_status' | 'riskLevel' | 'delivery_date' | 'daysSinceDeliveryDate' | 'total_value';
+type SortField = 'orderNumber' | 'customerName' | 'wooStatus' | 'riskLevel' | 'deliveryDate' | 'daysSinceDeliveryDate' | 'totalValue';
 type SortDirection = 'asc' | 'desc';
 
 const OrdersAtRiskTab: React.FC = () => {
@@ -129,7 +80,7 @@ const OrdersAtRiskTab: React.FC = () => {
   // Load order details when an order is selected
   const handleOrderClick = async (order: CustomerOrder) => {
     // If order lines are not loaded yet, load them
-    if (!order.order_lines || order.order_lines.length === 0) {
+    if (!order.orderLines || order.orderLines.length === 0) {
       const orderLines = await loadOrderLines(order.id);
       
       // Create a copy of the order with order lines
@@ -166,10 +117,10 @@ const OrdersAtRiskTab: React.FC = () => {
   // Filter orders based on search term, risk level, and status
   const filteredOrders = useMemo(() => {
     return atRiskOrders.filter(order => {
-      const matchesSearch = order.order_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           order.customer_name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                        order.customerName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesRiskLevel = riskLevelFilter === 'all' || order.riskLevel === riskLevelFilter;
-      const matchesStatus = statusFilter === 'all' || order.woo_status === statusFilter;
+              const matchesStatus = statusFilter === 'all' || order.wooStatus === statusFilter;
       return matchesSearch && matchesRiskLevel && matchesStatus;
     });
   }, [atRiskOrders, searchTerm, riskLevelFilter, statusFilter]);
@@ -180,32 +131,32 @@ const OrdersAtRiskTab: React.FC = () => {
       let comparison = 0;
       
       switch (sortField) {
-        case 'order_number':
-          comparison = a.order_number.localeCompare(b.order_number);
+        case 'orderNumber':
+          comparison = a.orderNumber.localeCompare(b.orderNumber);
           break;
-        case 'customer_name':
-          comparison = a.customer_name.localeCompare(b.customer_name);
+        case 'customerName':
+          comparison = a.customerName.localeCompare(b.customerName);
           break;
-        case 'woo_status':
-          comparison = a.woo_status.localeCompare(b.woo_status);
+        case 'wooStatus':
+          comparison = a.wooStatus.localeCompare(b.wooStatus);
           break;
         case 'riskLevel':
           // Convert risk levels to numeric values for comparison
           const riskValues = { high: 3, medium: 2, low: 1, undefined: 0 };
           comparison = (riskValues[a.riskLevel || 'undefined'] || 0) - (riskValues[b.riskLevel || 'undefined'] || 0);
           break;
-        case 'delivery_date':
+        case 'deliveryDate':
           // Handle null dates
-          if (!a.delivery_date && !b.delivery_date) comparison = 0;
-          else if (!a.delivery_date) comparison = -1;
-          else if (!b.delivery_date) comparison = 1;
-          else comparison = new Date(a.delivery_date).getTime() - new Date(b.delivery_date).getTime();
+          if (!a.deliveryDate && !b.deliveryDate) comparison = 0;
+          else if (!a.deliveryDate) comparison = -1;
+          else if (!b.deliveryDate) comparison = 1;
+          else comparison = new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime();
           break;
         case 'daysSinceDeliveryDate':
           comparison = (a.daysSinceDeliveryDate || 0) - (b.daysSinceDeliveryDate || 0);
           break;
-        case 'total_value':
-          comparison = a.total_value - b.total_value;
+        case 'totalValue':
+          comparison = a.totalValue - b.totalValue;
           break;
         default:
           comparison = 0;
@@ -235,8 +186,8 @@ const OrdersAtRiskTab: React.FC = () => {
   const getStatusCounts = () => {
     return {
       'all': atRiskOrders.length,
-      'processing': atRiskOrders.filter(o => o.woo_status === 'processing').length,
-      'delvis-levert': atRiskOrders.filter(o => o.woo_status === 'delvis-levert').length
+      'processing': atRiskOrders.filter(o => o.wooStatus === 'processing').length,
+      'delvis-levert': atRiskOrders.filter(o => o.wooStatus === 'delvis-levert').length
     };
   };
 
@@ -546,21 +497,21 @@ const OrdersAtRiskTab: React.FC = () => {
                   <tr>
                     <th 
                       className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('order_number')}
+                      onClick={() => handleSort('orderNumber')}
                     >
-                      Order # {renderSortIndicator('order_number')}
+                                              Order # {renderSortIndicator('orderNumber')}
                     </th>
                     <th 
                       className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('customer_name')}
+                      onClick={() => handleSort('customerName')}
                     >
-                      Customer {renderSortIndicator('customer_name')}
+                                              Customer {renderSortIndicator('customerName')}
                     </th>
                     <th 
                       className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('woo_status')}
+                      onClick={() => handleSort('wooStatus')}
                     >
-                      Status {renderSortIndicator('woo_status')}
+                                              Status {renderSortIndicator('wooStatus')}
                     </th>
                     <th 
                       className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-100"
@@ -570,9 +521,9 @@ const OrdersAtRiskTab: React.FC = () => {
                     </th>
                     <th 
                       className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('delivery_date')}
+                      onClick={() => handleSort('deliveryDate')}
                     >
-                      Delivery Date {renderSortIndicator('delivery_date')}
+                                              Delivery Date {renderSortIndicator('deliveryDate')}
                     </th>
                     <th 
                       className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-100"
@@ -582,9 +533,9 @@ const OrdersAtRiskTab: React.FC = () => {
                     </th>
                     <th 
                       className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:bg-gray-100"
-                      onClick={() => handleSort('total_value')}
+                      onClick={() => handleSort('totalValue')}
                     >
-                      Value {renderSortIndicator('total_value')}
+                                              Value {renderSortIndicator('totalValue')}
                     </th>
                     <th className="text-left py-3 px-6 text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
                   </tr>
@@ -597,14 +548,14 @@ const OrdersAtRiskTab: React.FC = () => {
                       onClick={() => handleOrderClick(order)}
                     >
                       <td className="py-4 px-6">
-                        <div className="text-sm font-medium text-gray-900">{order.order_number}</div>
+                        <div className="text-sm font-medium text-gray-900">{order.orderNumber}</div>
                       </td>
                       <td className="py-4 px-6">
-                        <div className="text-sm text-gray-900">{order.customer_name}</div>
+                        <div className="text-sm text-gray-900">{order.customerName}</div>
                       </td>
                       <td className="py-4 px-6">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.woo_status)}`}>
-                          {order.woo_status.replace('-', ' ')}
+                                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.wooStatus)}`}>
+                            {order.wooStatus.replace('-', ' ')}
                         </span>
                       </td>
                       <td className="py-4 px-6">
@@ -616,7 +567,7 @@ const OrdersAtRiskTab: React.FC = () => {
                         )}
                       </td>
                       <td className="py-4 px-6">
-                        <div className="text-sm text-gray-900">{formatDate(order.delivery_date)}</div>
+                        <div className="text-sm text-gray-900">{formatDate(order.deliveryDate)}</div>
                       </td>
                       <td className="py-4 px-6">
                         {order.daysSinceDeliveryDate !== undefined && (
@@ -624,7 +575,7 @@ const OrdersAtRiskTab: React.FC = () => {
                         )}
                       </td>
                       <td className="py-4 px-6">
-                        <div className="text-sm font-medium text-gray-900">{formatCurrency(order.total_value)}</div>
+                        <div className="text-sm font-medium text-gray-900">{formatCurrency(order.totalValue)}</div>
                       </td>
                       <td className="py-4 px-6">
                         <div className="flex items-center space-x-2">

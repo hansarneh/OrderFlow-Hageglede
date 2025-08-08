@@ -52,9 +52,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, activeTab, 
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  const filteredMenuItems = menuItems.filter(item => 
-    !item.adminOnly || user?.role === 'admin'
-  );
+  const filteredMenuItems = menuItems;
 
   const handleMenuItemClick = (itemId: string) => {
     if (itemId === 'shipment-planner') {

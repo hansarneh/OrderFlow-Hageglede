@@ -62,10 +62,10 @@ export async function testFirebaseConnectivity(projectId: string = 'order-flow-b
       // Provide detailed error information
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         errors[name] = 'Network error: Failed to fetch. This usually indicates a network connectivity issue.';
-      } else if (error.name === 'AbortError') {
+      } else if ((error as Error).name === 'AbortError') {
         errors[name] = 'Timeout: Request took too long to complete.';
       } else {
-        errors[name] = `Error: ${error.message || 'Unknown error'}`;
+        errors[name] = `Error: ${(error as Error).message || 'Unknown error'}`;
       }
       
       console.error(`❌ ${name} endpoint is not reachable:`, errors[name]);
@@ -142,10 +142,10 @@ export async function testUrlConnectivity(url: string, timeout: number = 5000): 
     
     if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
       errorMessage = 'Network error: Failed to fetch. This usually indicates a network connectivity issue.';
-    } else if (error.name === 'AbortError') {
+    } else if ((error as Error).name === 'AbortError') {
       errorMessage = 'Timeout: Request took too long to complete.';
     } else {
-      errorMessage = error.message || 'Unknown error';
+              errorMessage = (error as Error).message || 'Unknown error';
     }
     
     return {

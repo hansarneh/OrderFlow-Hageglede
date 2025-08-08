@@ -70,9 +70,9 @@ export async function testEndpoint(
     
     // Determine error type
     let errorType = 'unknown';
-    let errorMessage = error.message || 'Unknown error';
+    let errorMessage = (error as Error).message || 'Unknown error';
     
-    if (error.name === 'AbortError') {
+    if ((error as Error).name === 'AbortError') {
       errorType = 'timeout';
       errorMessage = `Request timed out after ${timeout}ms`;
     } else if (error instanceof TypeError) {
@@ -143,7 +143,7 @@ export async function testDnsResolution(): Promise<{
     return {
       success: false,
       latency,
-      error: `Unexpected error during DNS test: ${error.message || 'Unknown error'}`
+      error: `Unexpected error during DNS test: ${(error as Error).message || 'Unknown error'}`
     };
   }
 }
@@ -175,7 +175,7 @@ export async function testForProxy(): Promise<{
       
       // Check for unexpected IP address
       const ipMatch = text.match(/ip=([0-9.]+)/);
-      if (ipMatch && ipMatch[1].startsWith('10.') || ipMatch[1].startsWith('172.16.') || ipMatch[1].startsWith('192.168.')) {
+      if (ipMatch && (ipMatch[1].startsWith('10.') || ipMatch[1].startsWith('172.16.') || ipMatch[1].startsWith('192.168.'))) {
         evidence.push(`Private IP address detected: ${ipMatch[1]}`);
       }
     }
@@ -219,7 +219,7 @@ export async function testForProxy(): Promise<{
     }
   } catch (error) {
     // If tests fail, we can't determine if there's a proxy
-    evidence.push(`Proxy test failed: ${error.message || 'Unknown error'}`);
+    evidence.push(`Proxy test failed: ${(error as Error).message || 'Unknown error'}`);
   }
   
   return {
@@ -300,8 +300,8 @@ export async function runConnectivityTests(projectId: string = 'order-flow-bolt'
   const internetConnectivity = publicEndpoints.some(r => r.success);
   const firebaseConnectivity = firebaseEndpoints.some(r => r.success);
   
-  let overallStatus: 'success' | 'partial' | 'failure';
-  let message = '';
+  let overallStatus: 'success' | 'partial' | 'failure' = 'failure';
+  let message = 'Unable to determine connectivity status';
   
   if (internetConnectivity && firebaseConnectivity) {
     overallStatus = 'success';

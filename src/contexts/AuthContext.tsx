@@ -107,7 +107,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.warn('No profile found for user:', firebaseUser.uid);
         
         // Create a default profile if none exists
-        const defaultProfile = {
+        const defaultProfile: Omit<User, 'id'> = {
           name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Unknown User',
           email: firebaseUser.email || '',
           role: 'operator',
@@ -136,15 +136,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const profileData = profileDoc.data();
       console.log('Profile data retrieved:', profileData);
       
-      return {
-        id: firebaseUser.uid,
-        name: profileData.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Unknown User',
-        email: firebaseUser.email || '',
-        role: profileData.role || 'operator',
-        department: profileData.department || 'General',
-        lastLogin: profileData.lastLogin || new Date().toISOString(),
-        status: profileData.status || 'active'
-      };
+        return {
+          id: firebaseUser.uid,
+          name: profileData.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Unknown User',
+          email: firebaseUser.email || '',
+          role: (profileData.role as 'admin' | 'manager' | 'operator') || 'operator',
+          department: profileData.department || 'General',
+          lastLogin: profileData.lastLogin || new Date().toISOString(),
+          status: (profileData.status as 'active' | 'inactive') || 'active'
+        };
     } catch (error) {
       console.error('Error mapping Firebase user to User:', error);
       

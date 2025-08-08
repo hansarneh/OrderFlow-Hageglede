@@ -52,9 +52,9 @@ const NetworkDiagnostics: React.FC<NetworkDiagnosticsProps> = ({
       console.error('Error running network tests:', error);
       setTestResults({
         overallStatus: 'failure',
-        message: `Error running tests: ${error.message || 'Unknown error'}`,
+        message: `Error running tests: ${(error as Error).message || 'Unknown error'}`,
         timestamp: new Date().toISOString(),
-        error: error.message || 'Unknown error'
+        error: (error as Error).message || 'Unknown error'
       });
     } finally {
       setIsRunningTests(false);
