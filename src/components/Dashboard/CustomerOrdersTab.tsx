@@ -672,20 +672,6 @@ const CustomerOrdersTab: React.FC = () => {
             <span>Refresh</span>
           </button>
           
-          <button 
-            onClick={handleSync}
-            disabled={loading || syncing}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-            <span>
-              {syncing 
-                ? `Syncing ${activeTab === 'combined' ? 'all sources' : activeTab === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}...` 
-                : `Sync ${activeTab === 'combined' ? 'All Sources' : activeTab === 'woocommerce' ? 'WooCommerce' : 'Ongoing WMS'}`
-              }
-            </span>
-          </button>
-          
           <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2">
             <Plus className="w-4 h-4" />
             <span>New Order</span>
@@ -781,23 +767,18 @@ const CustomerOrdersTab: React.FC = () => {
             <h3 className="text-gray-900 font-medium mb-2">No orders found</h3>
             <p className="text-gray-600 text-sm mb-4">
               {activeTab === 'woocommerce' 
-                ? 'Sync orders from your WooCommerce store to get started. Only orders with status "processing" or "delvis-levert" will be imported.'
+                ? 'No WooCommerce orders found in the database. Contact your administrator to perform initial sync.'
                 : activeTab === 'ongoing_wms'
-                ? 'Sync orders from your Ongoing WMS system to get started. Only active orders (not fulfilled) will be imported.'
-                : 'Sync orders from your systems to get started.'
+                ? 'No Ongoing WMS orders found in the database. Contact your administrator to perform initial sync.'
+                : 'No orders found from any source. Contact your administrator to perform initial sync.'
               }
             </p>
-            <button 
-              onClick={handleSync}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
-            >
-              {activeTab === 'woocommerce' 
-                ? 'Sync Orders from WooCommerce'
-                : activeTab === 'ongoing_wms'
-                ? 'Sync Orders from Ongoing WMS'
-                : 'Sync All Sources'
-              }
-            </button>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">
+              <p className="text-blue-800 text-sm">
+                <strong>Note:</strong> Initial sync is performed by administrators in Settings → Initial Sync. 
+                Once completed, orders will appear here automatically.
+              </p>
+            </div>
           </div>
         </div>
       )}
