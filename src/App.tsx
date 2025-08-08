@@ -31,7 +31,16 @@ const DashboardContent: React.FC = () => {
       case 'backordered-products':
         return <BackorderedProductsTab />;
       case 'customer-orders':
-        return <CustomerOrdersTabNew />;
+        return (
+          <div className="space-y-6">
+            <div className="bg-red-500 text-white p-4 rounded-lg text-center font-bold text-2xl">
+              🚨 TESTING ROUTING - CUSTOMER ORDERS TAB 🚨
+              <br />
+              <span className="text-sm">Timestamp: {new Date().toISOString()}</span>
+            </div>
+            <CustomerOrdersTabNew />
+          </div>
+        );
       case 'order-mappings':
         return <div>Order Mappings (Coming Soon)</div>;
       case 'orders-at-risk':
