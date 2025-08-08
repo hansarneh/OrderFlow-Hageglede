@@ -506,13 +506,16 @@ const CustomerOrdersTab: React.FC = () => {
                          order.customerName.toLowerCase().includes(searchTerm.toLowerCase());
     
     let matchesStatus = true;
-    if (statusFilter !== 'all') {
-      if (syncSource === 'woocommerce') {
-        matchesStatus = 'wooStatus' in order && order.wooStatus === statusFilter;
-      } else {
-        matchesStatus = 'ongoingStatus' in order && order.ongoingStatus === parseInt(statusFilter);
+          if (statusFilter !== 'all') {
+        if (syncSource === 'woocommerce') {
+          matchesStatus = 'wooStatus' in order && order.wooStatus === statusFilter;
+        } else {
+          // Handle both old and new field names for Ongoing WMS
+          const ongoingStatus = 'ongoingStatus' in order ? order.ongoingStatus : 
+                              ('orderStatus' in order && (order.orderStatus as any)?.number) ? (order.orderStatus as any).number : null;
+          matchesStatus = ongoingStatus === parseInt(statusFilter);
+        }
       }
-    }
     
     return matchesSearch && matchesStatus;
   });

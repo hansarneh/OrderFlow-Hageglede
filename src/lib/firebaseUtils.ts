@@ -393,7 +393,7 @@ export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<On
     );
     
     if (statusFilter !== 'all') {
-      q = query(q, where('ongoingStatus', '==', parseInt(statusFilter)));
+      q = query(q, where('orderStatus.number', '==', parseInt(statusFilter)));
     }
     
     const snapshot = await getDocs(q);
@@ -405,7 +405,7 @@ export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<On
         ongoingOrderId: data.ongoingOrderId,
         orderNumber: data.orderNumber,
         customerName: data.customerName,
-        ongoingStatus: data.ongoingStatus,
+        ongoingStatus: data.orderStatus?.number || data.ongoingStatus,
         totalValue: data.totalValue,
         totalItems: data.totalItems,
         dateCreated: data.dateCreated,
