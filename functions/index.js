@@ -1104,8 +1104,38 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
             if (order.orderInfo?.orderStatus?.number === status) {
               const firestoreOrder = transformOngoingOrderToFirestore(order);
               
-              // Store in Firestore
+              // Store order in Firestore
               await db.collection('ongoingOrders').doc(orderId.toString()).set(firestoreOrder);
+              
+              // Store order lines separately in ongoingOrderLines collection
+              if (order.orderLines && order.orderLines.length > 0) {
+                for (const line of order.orderLines) {
+                  const lineRef = db.collection('ongoingOrderLines').doc(`${orderId}_${line.id}`);
+                  
+                  await lineRef.set({
+                    orderId: orderId.toString(),
+                    ongoingLineItemId: line.id,
+                    rowNumber: line.rowNumber,
+                    articleNumber: line.article?.articleNumber,
+                    articleName: line.article?.articleName,
+                    productCode: line.article?.productCode,
+                    productId: line.article?.articleId,
+                    orderedQuantity: line.orderedNumberOfItems,
+                    allocatedQuantity: line.allocatedNumberOfItems,
+                    pickedQuantity: line.pickedNumberOfItems,
+                    packedQuantity: line.packedNumberOfItems,
+                    linePrice: line.prices?.linePrice,
+                    customerLinePrice: line.prices?.customerLinePrice,
+                    currencyCode: line.prices?.currencyCode,
+                    deliveryDate: line.deliveryDate,
+                    comment: line.comment,
+                    deliveryStatus: 'pending', // Default status
+                    deliveredQuantity: 0, // Default value
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                  });
+                }
+              }
               
               syncedOrders.push({
                 orderId: orderId,
@@ -1113,7 +1143,7 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
                 status: order.orderInfo.orderStatus.text
               });
               
-              console.log(`Synced order ${orderId} (${order.orderInfo.orderNumber})`);
+              console.log(`Synced order ${orderId} (${order.orderInfo.orderNumber}) with ${order.orderLines?.length || 0} order lines`);
             }
           }
         } catch (error) {
