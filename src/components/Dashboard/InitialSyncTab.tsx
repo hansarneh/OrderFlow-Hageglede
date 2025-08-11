@@ -765,6 +765,73 @@ const InitialSyncTab: React.FC = () => {
             <Database className="w-4 h-4" />
             <span>Check Both Collections</span>
           </button>
+
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Syncing ALL Ongoing WMS order lines for existing orders...');
+              try {
+                const { collection, getDocs } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const { httpsCallable } = await import('firebase/functions');
+                const { getFunctions } = await import('firebase/functions');
+                const db = getFirestore();
+                const functions = getFunctions();
+                
+                // Get all Ongoing WMS orders
+                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+                addLog(`Found ${ordersSnapshot.size} Ongoing WMS orders to sync order lines for`);
+                
+                let syncedCount = 0;
+                let errorCount = 0;
+                
+                // Process each order to sync its order lines
+                for (const orderDoc of ordersSnapshot.docs) {
+                  const orderData = orderDoc.data();
+                  const orderNumber = orderData.orderNumber;
+                  const ongoingOrderId = orderData.ongoingOrderId;
+                  
+                  addLog(`Syncing order lines for order ${orderNumber} (Ongoing ID: ${ongoingOrderId})...`);
+                  
+                  try {
+                    // Call the Firebase Function to sync order lines for this specific order
+                    const syncOrderLines = httpsCallable(functions, 'syncOngoingOrderLinesByOrderId');
+                    const result = await syncOrderLines({ 
+                      orderId: ongoingOrderId,
+                      orderNumber: orderNumber,
+                      documentId: orderDoc.id
+                    });
+                    
+                    const data = result.data as any;
+                    if (data.success) {
+                      addLog(`✅ Synced ${data.orderLinesCount} order lines for order ${orderNumber}`);
+                      syncedCount += data.orderLinesCount;
+                    } else {
+                      addLog(`❌ Failed to sync order lines for order ${orderNumber}: ${data.error}`);
+                      errorCount++;
+                    }
+                  } catch (err: any) {
+                    addLog(`❌ Error syncing order lines for order ${orderNumber}: ${err.message}`);
+                    errorCount++;
+                  }
+                  
+                  // Small delay to avoid overwhelming the API
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                addLog(`🎉 Sync completed! Synced ${syncedCount} order lines, ${errorCount} errors`);
+              } catch (err: any) {
+                addLog(`Sync ALL order lines error: ${err.message}`);
+              }
+            }}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Sync ALL Ongoing WMS Order Lines</span>
+          </button>
               <button
                 onClick={testSyncKnownOrders}
                 className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"

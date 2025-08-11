@@ -910,17 +910,18 @@ exports.fetchOngoingWarehouses = functions.https.onCall(async (data, context) =>
 // These functions will be added to functions/index.js
 
 // Helper function to get Ongoing WMS credentials
-async function getOngoingWMSCredentials() {
+async function getOngoingWMSCredentials(userId) {
   const integrationsRef = admin.firestore().collection('integrations');
   
   // Query for Ongoing WMS integration by type
   const querySnapshot = await integrationsRef
     .where('integrationType', '==', 'ongoing_wms')
+    .where('userId', '==', userId) // Add userId filter
     .limit(1)
     .get();
   
   if (querySnapshot.empty) {
-    throw new functions.https.HttpsError('not-found', 'Ongoing WMS credentials not found');
+    throw new functions.https.HttpsError('not-found', 'Ongoing WMS credentials not found for this user');
   }
 
   const doc = querySnapshot.docs[0];
@@ -928,7 +929,7 @@ async function getOngoingWMSCredentials() {
   const credentials = data.credentials;
 
   if (!credentials || !credentials.username || !credentials.password || !credentials.baseUrl) {
-    throw new functions.https.HttpsError('invalid-argument', 'Missing Ongoing WMS credentials');
+    throw new functions.https.HttpsError('invalid-argument', 'Missing Ongoing WMS credentials for this user');
   }
 
   // Create Basic Auth header
@@ -1096,7 +1097,7 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
       throw new functions.https.HttpsError('invalid-argument', 'Status is required');
     }
 
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     console.log(`Syncing orders with status: ${status}, goodsOwnerId: ${goodsOwnerId}, limit: ${limit}`);
 
@@ -1288,7 +1289,7 @@ exports.syncOngoingPurchaseOrdersByStatus = functions.https.onCall(async (data, 
       throw new functions.https.HttpsError('invalid-argument', 'Status is required');
     }
 
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     console.log(`Syncing purchase orders with status: ${status}, goodsOwnerId: ${goodsOwnerId}`);
 
@@ -1378,7 +1379,7 @@ exports.getOngoingOrderStatuses = functions.https.onCall(async (data, context) =
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/statuses`;
 
@@ -1424,7 +1425,7 @@ exports.getOngoingPurchaseOrderStatuses = functions.https.onCall(async (data, co
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     const apiUrl = `${baseUrl.replace(/\/$/, '')}/purchaseOrders/statuses`;
 
@@ -1468,7 +1469,7 @@ exports.scheduledOngoingOrderSync = functions.pubsub.schedule('every 1 hours').o
     console.log('Starting scheduled Ongoing WMS order sync...');
 
     // Get Ongoing WMS credentials
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     // Sync orders with different statuses
     const orderStatuses = [200, 210, 300, 320, 400, 450, 451, 500, 600]; // Common statuses
@@ -1542,7 +1543,7 @@ exports.scheduledOngoingPurchaseOrderSync = functions.pubsub.schedule('every 1 h
     console.log('Starting scheduled Ongoing WMS purchase order sync...');
 
     // Get Ongoing WMS credentials
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     // Sync purchase orders with different statuses
     const purchaseOrderStatuses = [100, 150, 151, 200, 300, 400, 500]; // Common statuses
@@ -1620,7 +1621,7 @@ exports.diagnoseOngoingOrders = functions.https.onCall(async (data, context) => 
 
     const { orderIds = [214600, 216042] } = data;
 
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     console.log(`Diagnosing orders: ${orderIds.join(', ')}`);
 
@@ -1709,7 +1710,7 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
     const { status = 320 } = data;  // Changed from 200 to 320
     console.log('Requested status:', status);
 
-    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
     console.log('Got credentials, baseUrl:', baseUrl);
 
     console.log(`Testing sync for status: ${status}`);
@@ -1839,5 +1840,103 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
   } catch (error) {
     console.error('Error testing Ongoing WMS orders:', error);
     throw new functions.https.HttpsError('internal', error.message);
+  }
+});
+
+// Function to sync order lines for a specific Ongoing WMS order
+exports.syncOngoingOrderLinesByOrderId = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const { orderId, orderNumber, documentId } = data;
+  
+  if (!orderId || !orderNumber || !documentId) {
+    throw new functions.https.HttpsError('invalid-argument', 'orderId, orderNumber, and documentId are required');
+  }
+
+  try {
+    console.log(`Syncing order lines for order ${orderNumber} (Ongoing ID: ${orderId}, Document ID: ${documentId})`);
+    
+    // Get Ongoing WMS credentials
+    const credentials = await getOngoingWMSCredentials(context.auth.uid);
+    if (!credentials) {
+      throw new functions.https.HttpsError('not-found', 'Ongoing WMS credentials not found for this user');
+    }
+
+    // Fetch order details from Ongoing WMS
+    const orderResponse = await fetch(`${credentials.baseUrl}/orders/${orderId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!orderResponse.ok) {
+      if (orderResponse.status === 404) {
+        console.log(`Order ${orderId} not found in Ongoing WMS`);
+        return { success: false, error: 'Order not found in Ongoing WMS', orderLinesCount: 0 };
+      }
+      throw new Error(`Failed to fetch order: ${orderResponse.status} ${orderResponse.statusText}`);
+    }
+
+    const orderData = await orderResponse.json();
+    console.log(`Fetched order data for ${orderId}:`, orderData);
+
+    if (!orderData.orderInfo || !orderData.orderLines) {
+      console.log(`Order ${orderId} has no order lines`);
+      return { success: false, error: 'Order has no order lines', orderLinesCount: 0 };
+    }
+
+    // Save order lines to Firestore
+    let savedCount = 0;
+    for (const line of orderData.orderLines) {
+      try {
+        const lineData = {
+          orderId: documentId, // Use the Firestore document ID, not the order number
+          orderNumber: orderNumber, // Keep the order number for reference
+          ongoingLineItemId: line.id,
+          rowNumber: line.rowNumber,
+          articleNumber: line.articleNumber,
+          articleName: line.articleName,
+          orderedQuantity: line.orderedQuantity,
+          deliveredQuantity: line.deliveredQuantity || 0,
+          linePrice: line.linePrice,
+          unitPrice: line.unitPrice,
+          taxAmount: line.taxAmount || 0,
+          metaData: line.metaData || {},
+          deliveryDate: line.deliveryDate,
+          deliveryStatus: line.deliveryStatus || 'pending',
+          partialDeliveryDetails: line.partialDeliveryDetails || {},
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // Remove undefined values
+        const cleanLineData = removeUndefinedValues(lineData);
+
+        // Use a unique document ID for the order line
+        const lineDocId = `${documentId}_${line.id}`;
+        await db.collection('ongoingOrderLines').doc(lineDocId).set(cleanLineData, { merge: true });
+        
+        console.log(`Saved order line ${lineDocId} for order ${orderNumber}`);
+        savedCount++;
+      } catch (lineError) {
+        console.error(`Error saving order line ${line.id}:`, lineError);
+      }
+    }
+
+    console.log(`Successfully synced ${savedCount} order lines for order ${orderNumber}`);
+    return { 
+      success: true, 
+      orderLinesCount: savedCount,
+      orderNumber: orderNumber,
+      orderId: orderId
+    };
+
+  } catch (error) {
+    console.error(`Error syncing order lines for order ${orderNumber}:`, error);
+    throw new functions.https.HttpsError('internal', `Failed to sync order lines: ${error.message}`);
   }
 });
