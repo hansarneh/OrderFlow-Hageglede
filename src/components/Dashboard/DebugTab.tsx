@@ -190,39 +190,15 @@ const DebugTab: React.FC = () => {
               const { getFunctions } = await import('firebase/functions');
               const functions = getFunctions();
               
-              // Test with a known order to see the full data structure
-              const diagnose = httpsCallable(functions, 'diagnoseOngoingOrders');
-              const result = await diagnose({ orderIds: [214600] });
+              // Use the new debug function
+              const debugOrder = httpsCallable(functions, 'debugOrderData');
+              const result = await debugOrder({ orderId: 214600 });
               
               const data = result.data as any;
               if (data.success) {
                 addLog('Order 214600 data structure:');
-                addLog(`  Results:`, JSON.stringify(data.results, null, 2));
-                
-                // Find the order with ID 214600
-                const order214600 = data.results.find((r: any) => r.orderId === 214600);
-                if (order214600 && order214600.found) {
-                  addLog(`  ✅ Order 214600 found with status: ${order214600.status?.number} (${order214600.status?.text})`);
-                  addLog(`  Order number: ${order214600.orderNumber}`);
-                  addLog(`  Order lines: ${order214600.orderLines}`);
-                  
-                  // Show the full order data structure
-                  const orderInfo = order214600.fullOrderData?.orderInfo;
-                  if (orderInfo) {
-                    addLog(`  📊 Order Info Structure:`);
-                    addLog(`    - customerPrice: ${orderInfo.customerPrice}`);
-                    addLog(`    - totalPrice: ${orderInfo.totalPrice}`);
-                    addLog(`    - createdDate: ${orderInfo.createdDate}`);
-                    addLog(`    - orderDate: ${orderInfo.orderDate}`);
-                    addLog(`    - deliveryDate: ${orderInfo.deliveryDate}`);
-                    addLog(`    - Full orderInfo:`, JSON.stringify(orderInfo, null, 2));
-                  } else {
-                    addLog(`  ❌ No orderInfo found in fullOrderData`);
-                    addLog(`  Full order data:`, JSON.stringify(order214600.fullOrderData, null, 2));
-                  }
-                } else {
-                  addLog(`  ❌ Order 214600 not found or has error:`, order214600);
-                }
+                addLog(`  📊 Debug Info:`, JSON.stringify(data.debugInfo, null, 2));
+                addLog(`  📊 Full Order Data:`, JSON.stringify(data.fullOrderData, null, 2));
               } else {
                 addLog(`❌ Failed to get order data: ${data.error}`);
               }

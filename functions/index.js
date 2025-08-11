@@ -1902,7 +1902,7 @@ exports.syncOngoingOrderLinesByOrderId = functions.https.onCall(async (data, con
           articleName: line.article?.articleName || line.articleName,
           // Map quantity information correctly
           orderedQuantity: line.orderedNumberOfItems || line.orderedQuantity,
-          deliveredQuantity: line.deliveredNumberOfItems || line.deliveredQuantity || 0,
+          deliveredQuantity: line.orderedNumberOfItems || line.deliveredQuantity || 0, // Corrected to use orderedNumberOfItems as primary
           // Map price information correctly
           linePrice: line.prices?.linePrice || line.linePrice,
           unitPrice: line.prices?.unitPrice || line.unitPrice,
@@ -1945,5 +1945,65 @@ exports.syncOngoingOrderLinesByOrderId = functions.https.onCall(async (data, con
   } catch (error) {
     console.error(`Error syncing order lines for order ${orderNumber}:`, error);
     throw new functions.https.HttpsError('internal', `Failed to sync order lines: ${error.message}`);
+  }
+});
+
+// Debug function to get full order data structure
+exports.debugOrderData = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const { orderId = 214600 } = data;
+
+  try {
+    console.log(`Debugging order data for order ${orderId}`);
+    
+    // Get Ongoing WMS credentials
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
+
+    // Fetch order details from Ongoing WMS
+    const orderResponse = await fetch(`${baseUrl}/orders/${orderId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!orderResponse.ok) {
+      throw new Error(`Failed to fetch order: ${orderResponse.status} ${orderResponse.statusText}`);
+    }
+
+    const orderData = await orderResponse.json();
+    console.log(`Fetched order data for ${orderId}:`, orderData);
+
+    // Extract key fields for debugging
+    const orderInfo = orderData.orderInfo || {};
+    const debugInfo = {
+      orderId: orderId,
+      orderNumber: orderInfo.orderNumber,
+      status: orderInfo.orderStatus,
+      // Total value fields
+      customerPrice: orderInfo.customerPrice,
+      totalPrice: orderInfo.totalPrice,
+      price: orderInfo.price,
+      // Date fields
+      createdDate: orderInfo.createdDate,
+      orderDate: orderInfo.orderDate,
+      deliveryDate: orderInfo.deliveryDate,
+      // Full orderInfo for reference
+      fullOrderInfo: orderInfo
+    };
+
+    return {
+      success: true,
+      debugInfo: debugInfo,
+      fullOrderData: orderData
+    };
+
+  } catch (error) {
+    console.error(`Error debugging order ${orderId}:`, error);
+    throw new functions.https.HttpsError('internal', `Failed to debug order: ${error.message}`);
   }
 });
