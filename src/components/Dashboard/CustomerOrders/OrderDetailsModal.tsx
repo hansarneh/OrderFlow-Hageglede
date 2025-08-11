@@ -31,6 +31,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
   if (!isOpen || !order) return null;
 
   const formatCurrency = (amount: number) => {
+    if (!amount || isNaN(amount)) return '0 kr';
     return new Intl.NumberFormat('no-NO', {
       style: 'currency',
       currency: 'NOK',
@@ -41,7 +42,21 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Not set';
-    return new Date(dateString).toLocaleDateString('no-NO');
+    try {
+      // Handle Firestore timestamp objects
+      if (typeof dateString === 'object' && 'toDate' in dateString) {
+        return (dateString as any).toDate().toLocaleDateString('no-NO');
+      }
+      // Handle string dates
+      return new Date(dateString).toLocaleDateString('no-NO');
+    } catch (error) {
+      return 'Invalid date';
+    }
+  };
+
+  const formatNumber = (value: any) => {
+    if (!value || isNaN(value)) return '0';
+    return value.toString();
   };
 
   const getDeliveryStatusColor = (status: string) => {
@@ -202,7 +217,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Value:</span>
-                    <span className="font-medium text-gray-900">{formatCurrency(order.totalValue)}</span>
+                    <span className="font-medium text-gray-900">{formatCurrency(order.totalValue || 0)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Total Items:</span>
@@ -283,7 +298,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                         <div className="md:col-span-2 flex flex-col items-center">
                           <div className="text-sm text-gray-600">Quantity</div>
                           <div className="flex items-center space-x-2">
-                            <span className="font-medium">{line.quantity}</span>
+                            <span className="font-medium">{formatNumber(line.quantity)}</span>
                             <span className="text-gray-400">×</span>
                             <span className="text-sm">{formatCurrency(line.unitPrice)}</span>
                           </div>
@@ -291,7 +306,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
                         
                         <div className="md:col-span-2 flex flex-col items-center">
                           <div className="text-sm text-gray-600">Delivered</div>
-                          <div className="font-medium text-green-600">{line.deliveredQuantity}</div>
+                          <div className="font-medium text-green-600">{formatNumber(line.deliveredQuantity)}</div>
                         </div>
                         
                         <div className="md:col-span-2 flex flex-col items-center">
