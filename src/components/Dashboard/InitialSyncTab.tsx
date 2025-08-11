@@ -539,6 +539,45 @@ const InitialSyncTab: React.FC = () => {
               />
             </div>
 
+            {/* Status Selection - Only show when strategy is status-based */}
+            {syncConfig.strategy === 'status-based' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Statuses to Sync</label>
+                <div className="space-y-2">
+                  {syncConfig.statuses.map((status, index) => (
+                    <div key={index} className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        value={status}
+                        onChange={(e) => {
+                          const newStatuses = [...syncConfig.statuses];
+                          newStatuses[index] = parseInt(e.target.value);
+                          setSyncConfig({ ...syncConfig, statuses: newStatuses });
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Status number"
+                      />
+                      <button
+                        onClick={() => {
+                          const newStatuses = syncConfig.statuses.filter((_, i) => i !== index);
+                          setSyncConfig({ ...syncConfig, statuses: newStatuses });
+                        }}
+                        className="px-3 py-2 text-red-600 hover:text-red-800"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setSyncConfig({ ...syncConfig, statuses: [...syncConfig.statuses, 200] })}
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    + Add Status
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Date Range */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
