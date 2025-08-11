@@ -387,7 +387,7 @@ const InitialSyncTab: React.FC = () => {
       addLog('Sample orders:');
       ordersSnapshot.forEach((doc) => {
         const data = doc.data();
-        addLog(`Order ${doc.id}: ${data.orderNumber} - Status: ${data.orderStatus?.text || 'Unknown'}`);
+        addLog(`Order ${doc.id}: ${data.orderNumber} - Status: ${data.orderStatus?.text || 'Unknown'} - Document ID: ${doc.id}`);
       });
       
       addLog('Sample order lines:');
