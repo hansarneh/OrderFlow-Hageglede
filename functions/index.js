@@ -1149,6 +1149,9 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
           if (response.ok) {
             const order = await response.json();
             
+            // Debug logging to see what we're comparing
+            console.log(`Order ${orderId}: Comparing status ${order.orderInfo?.orderStatus?.number} (type: ${typeof order.orderInfo?.orderStatus?.number}) with requested ${status} (type: ${typeof status})`);
+            
             // Check if order matches the requested status
             if (order.orderInfo?.orderStatus?.number === status) {
               console.log(`Found matching order: ${orderId} (${order.orderInfo.orderNumber})`);
@@ -1653,6 +1656,135 @@ exports.diagnoseOngoingOrders = functions.https.onCall(async (data, context) => 
 
   } catch (error) {
     console.error('Error diagnosing Ongoing WMS orders:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});
+
+// Simple test function to sync only known orders
+exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
+  try {
+    // Check if user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { status = 200 } = data;
+
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+
+    console.log(`Testing sync for status: ${status}`);
+
+    const syncedOrders = [];
+    const errors = [];
+    
+    // Only test the two known orders
+    const orderIdsToTest = [214600, 216042];
+
+    console.log(`Testing ${orderIdsToTest.length} known orders for status ${status}`);
+
+    for (const orderId of orderIdsToTest) {
+      console.log(`Testing order ${orderId}...`);
+      
+      try {
+        const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
+        const response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+            'User-Agent': 'LogiFlow/1.0'
+          },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const order = await response.json();
+          
+          console.log(`Order ${orderId}: Status ${order.orderInfo?.orderStatus?.number} (${order.orderInfo?.orderStatus?.text})`);
+          
+          // Check if order matches the requested status
+          if (order.orderInfo?.orderStatus?.number === status) {
+            console.log(`Found matching order: ${orderId} (${order.orderInfo.orderNumber})`);
+            
+            const firestoreOrder = transformOngoingOrderToFirestore(order);
+            
+            // Store order in Firestore
+            await db.collection('ongoingOrders').doc(orderId.toString()).set(firestoreOrder);
+            
+            // Store order lines separately in ongoingOrderLines collection
+            if (order.orderLines && order.orderLines.length > 0) {
+              for (const line of order.orderLines) {
+                const lineRef = db.collection('ongoingOrderLines').doc(`${orderId}_${line.id}`);
+                
+                await lineRef.set({
+                  orderId: orderId.toString(),
+                  ongoingLineItemId: line.id,
+                  rowNumber: line.rowNumber,
+                  articleNumber: line.article?.articleNumber,
+                  articleName: line.article?.articleName,
+                  productCode: line.article?.productCode,
+                  productId: line.article?.articleId,
+                  orderedQuantity: line.orderedNumberOfItems,
+                  allocatedQuantity: line.allocatedNumberOfItems,
+                  pickedQuantity: line.pickedNumberOfItems,
+                  packedQuantity: line.packedNumberOfItems,
+                  linePrice: line.prices?.linePrice,
+                  customerLinePrice: line.prices?.customerLinePrice,
+                  currencyCode: line.prices?.currencyCode,
+                  deliveryDate: line.deliveryDate,
+                  comment: line.comment,
+                  deliveryStatus: 'pending', // Default status
+                  deliveredQuantity: 0, // Default value
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+              }
+            }
+            
+            syncedOrders.push({
+              orderId: orderId,
+              orderNumber: order.orderInfo.orderNumber,
+              status: order.orderInfo.orderStatus.text
+            });
+            
+            console.log(`Synced order ${orderId} (${order.orderInfo.orderNumber}) with ${order.orderLines?.length || 0} order lines`);
+          } else {
+            console.log(`Order ${orderId} status ${order.orderInfo?.orderStatus?.number} doesn't match requested ${status}`);
+          }
+        } else if (response.status === 404) {
+          console.log(`Order ${orderId} not found, skipping`);
+        } else {
+          console.log(`Order ${orderId} returned status ${response.status}`);
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.log(`Timeout fetching order ${orderId}`);
+          errors.push({ orderId, error: 'Request timeout' });
+        } else {
+          console.error(`Error fetching order ${orderId}:`, error.message);
+          errors.push({ orderId, error: error.message });
+        }
+      }
+    }
+
+    console.log(`Test completed. Synced ${syncedOrders.length} orders, ${errors.length} errors`);
+
+    return {
+      success: true,
+      syncedOrders: syncedOrders,
+      totalSynced: syncedOrders.length,
+      errors: errors,
+      status: status
+    };
+
+  } catch (error) {
+    console.error('Error testing Ongoing WMS orders:', error);
     throw new functions.https.HttpsError('internal', error.message);
   }
 });

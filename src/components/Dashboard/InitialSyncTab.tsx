@@ -295,6 +295,43 @@ const InitialSyncTab: React.FC = () => {
     }
   };
 
+  const testSyncKnownOrders = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
+
+    addLog('Testing sync with known orders only...');
+
+    try {
+      const testSync = httpsCallable(functions, 'testSyncKnownOrders');
+      const result = await testSync({
+        status: 200
+      });
+
+      const data = result.data as any;
+      if (data.success) {
+        addLog(`Test sync completed: ${data.totalSynced} orders synced, ${data.errors.length} errors`);
+        if (data.syncedOrders.length > 0) {
+          addLog('Synced orders:');
+          data.syncedOrders.forEach((order: any) => {
+            addLog(`- Order ${order.orderId} (${order.orderNumber}): ${order.status}`);
+          });
+        }
+        if (data.errors.length > 0) {
+          addLog('Errors:');
+          data.errors.forEach((error: any) => {
+            addLog(`- Order ${error.orderId}: ${error.error}`);
+          });
+        }
+      } else {
+        addLog('Test sync failed');
+      }
+    } catch (err: any) {
+      addLog(`Test sync error: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -312,6 +349,13 @@ const InitialSyncTab: React.FC = () => {
               >
                 <Target className="w-4 h-4" />
                 <span>Diagnostic</span>
+              </button>
+              <button
+                onClick={testSyncKnownOrders}
+                className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"
+              >
+                <Package className="w-4 h-4" />
+                <span>Test Sync</span>
               </button>
               <button
                 onClick={startSync}
