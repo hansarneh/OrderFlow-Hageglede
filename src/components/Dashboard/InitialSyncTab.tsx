@@ -17,7 +17,8 @@ import {
   FileText,
   Zap,
   Settings,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -405,6 +406,65 @@ const InitialSyncTab: React.FC = () => {
     }
   };
 
+  const cleanupDuplicateOrders = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
+
+    addLog('Cleaning up duplicate orders...');
+
+    try {
+      const { collection, getDocs, doc, deleteDoc } = await import('firebase/firestore');
+      const { getFirestore } = await import('firebase/firestore');
+      const db = getFirestore();
+      
+      const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+      
+      // Find orders with the same order number but different document IDs
+      const orderNumberMap = new Map();
+      const duplicatesToDelete = [];
+      
+      ordersSnapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        const orderNumber = data.orderNumber;
+        
+        if (orderNumberMap.has(orderNumber)) {
+          // This is a duplicate - keep the one with the order number as document ID
+          const existingDocId = orderNumberMap.get(orderNumber);
+          const currentDocId = docSnapshot.id;
+          
+          if (existingDocId === orderNumber.toString()) {
+            // Keep existing, delete current
+            duplicatesToDelete.push(currentDocId);
+          } else if (currentDocId === orderNumber.toString()) {
+            // Keep current, delete existing
+            duplicatesToDelete.push(existingDocId);
+            orderNumberMap.set(orderNumber, currentDocId);
+          } else {
+            // Neither has order number as document ID, keep the first one
+            duplicatesToDelete.push(currentDocId);
+          }
+        } else {
+          orderNumberMap.set(orderNumber, docSnapshot.id);
+        }
+      });
+      
+      addLog(`Found ${duplicatesToDelete.length} duplicate orders to delete`);
+      
+      // Delete duplicates
+      for (const docId of duplicatesToDelete) {
+        await deleteDoc(doc(db, 'ongoingOrders', docId));
+        addLog(`Deleted duplicate order document: ${docId}`);
+      }
+      
+      addLog('Cleanup completed!');
+      
+    } catch (err: any) {
+      addLog(`Cleanup error: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -430,13 +490,60 @@ const InitialSyncTab: React.FC = () => {
                 <Target className="w-4 h-4" />
                 <span>Test 214600</span>
               </button>
-              <button
-                onClick={checkFirestoreOrders}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2"
-              >
-                <Database className="w-4 h-4" />
-                <span>Check DB</span>
-              </button>
+                        <button
+            onClick={checkFirestoreOrders}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Database className="w-4 h-4" />
+            <span>Check DB</span>
+          </button>
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Cleaning up duplicate orders...');
+              try {
+                const { collection, getDocs, doc, deleteDoc } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const db = getFirestore();
+                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+                const orderNumberMap = new Map<string, string>();
+                const duplicatesToDelete: string[] = [];
+                ordersSnapshot.forEach((docSnapshot) => {
+                  const data = docSnapshot.data();
+                  const orderNumber = data.orderNumber;
+                  if (orderNumberMap.has(orderNumber)) {
+                    const existingDocId = orderNumberMap.get(orderNumber);
+                    const currentDocId = docSnapshot.id;
+                    if (existingDocId === orderNumber.toString()) {
+                      duplicatesToDelete.push(currentDocId);
+                    } else if (currentDocId === orderNumber.toString()) {
+                      duplicatesToDelete.push(existingDocId);
+                      orderNumberMap.set(orderNumber, currentDocId);
+                    } else {
+                      duplicatesToDelete.push(currentDocId);
+                    }
+                  } else {
+                    orderNumberMap.set(orderNumber, docSnapshot.id);
+                  }
+                });
+                addLog(`Found ${duplicatesToDelete.length} duplicate orders to delete`);
+                for (const docId of duplicatesToDelete) {
+                  await deleteDoc(doc(db, 'ongoingOrders', docId));
+                  addLog(`Deleted duplicate order document: ${docId}`);
+                }
+                addLog('Cleanup completed!');
+              } catch (err: any) {
+                addLog(`Cleanup error: ${err.message}`);
+              }
+            }}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Cleanup Duplicates</span>
+          </button>
               <button
                 onClick={testSyncKnownOrders}
                 className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"
