@@ -479,15 +479,41 @@ export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<On
 // New function to get Ongoing WMS order lines
 export const getOngoingOrderLines = async (orderId: string): Promise<OngoingOrderLine[]> => {
   try {
+    console.log(`getOngoingOrderLines called for orderId: ${orderId}`);
+    
     const q = query(
       collection(db, 'ongoingOrderLines'),
       where('orderId', '==', orderId)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as OngoingOrderLine[];
+    
+    console.log(`Found ${snapshot.size} order lines for order ${orderId}`);
+    
+    const orderLines = snapshot.docs.map(doc => {
+      const data = doc.data();
+      console.log(`Order line data for ${doc.id}:`, data);
+      
+      return {
+        id: doc.id,
+        orderId: data.orderId,
+        ongoingLineItemId: data.ongoingLineItemId,
+        productId: data.productId,
+        productName: data.articleName || data.productName, // Handle both field names
+        sku: data.articleNumber || data.sku, // Handle both field names
+        quantity: data.orderedQuantity || data.quantity, // Handle both field names
+        unitPrice: data.linePrice || data.unitPrice, // Handle both field names
+        totalPrice: data.linePrice || data.totalPrice, // Handle both field names
+        taxAmount: data.taxAmount || 0,
+        metaData: data.metaData || {},
+        deliveredQuantity: data.deliveredQuantity || 0,
+        deliveryDate: data.deliveryDate,
+        deliveryStatus: data.deliveryStatus || 'pending',
+        partialDeliveryDetails: data.partialDeliveryDetails || {}
+      } as OngoingOrderLine;
+    });
+    
+    console.log(`Processed ${orderLines.length} order lines for order ${orderId}`);
+    return orderLines;
   } catch (error) {
     console.error('Error fetching Ongoing WMS order lines:', error);
     return [];
