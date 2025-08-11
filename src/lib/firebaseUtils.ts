@@ -411,19 +411,30 @@ export const getCustomerOrders = async (statusFilter: string = 'all'): Promise<C
 // New function to get Ongoing WMS orders
 export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<OngoingOrder[]> => {
   try {
+    console.log('getOngoingOrders called with statusFilter:', statusFilter);
+    
     let q = query(
       collection(db, 'ongoingOrders'),
       orderBy('dateCreated', 'desc')
     );
     
     if (statusFilter !== 'all') {
+      console.log('Adding status filter for:', parseInt(statusFilter));
       q = query(q, where('orderStatus.number', '==', parseInt(statusFilter)));
     }
     
     const snapshot = await getDocs(q);
+    console.log('Found', snapshot.size, 'ongoing orders in Firestore');
     
-    return snapshot.docs.map(doc => {
+    const orders = snapshot.docs.map(doc => {
       const data = doc.data();
+      console.log('Order data for', doc.id, ':', {
+        orderNumber: data.orderNumber,
+        orderStatus: data.orderStatus,
+        ongoingStatus: data.ongoingStatus,
+        customerName: data.customerName
+      });
+      
       return {
         id: doc.id,
         ongoingOrderId: data.ongoingOrderId,
@@ -443,6 +454,9 @@ export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<On
         source: 'ongoing_wms'
       } as OngoingOrder;
     });
+    
+    console.log('Returning', orders.length, 'processed ongoing orders');
+    return orders;
   } catch (error) {
     console.error('Error getting ongoing orders:', error);
     // Return empty array on error to prevent app from crashing
