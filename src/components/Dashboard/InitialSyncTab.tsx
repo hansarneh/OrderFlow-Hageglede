@@ -552,38 +552,50 @@ const InitialSyncTab: React.FC = () => {
                 setError('User not authenticated');
                 return;
               }
-              addLog('Fixing order line references...');
+              addLog('Fixing ALL order line references...');
               try {
                 const { collection, getDocs, doc, updateDoc } = await import('firebase/firestore');
                 const { getFirestore } = await import('firebase/firestore');
                 const db = getFirestore();
                 
-                // Get the order document that exists
-                const orderDoc = await getDocs(collection(db, 'ongoingOrders'));
-                const order214599 = orderDoc.docs.find(doc => doc.id === '214599');
+                // Get all orders to create a mapping
+                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+                const orderMapping = new Map<string, string>();
                 
-                if (!order214599) {
-                  addLog('Order 214599 not found');
-                  return;
-                }
+                ordersSnapshot.forEach((orderDoc) => {
+                  const orderData = orderDoc.data();
+                  const orderNumber = orderData.orderNumber;
+                  const documentId = orderDoc.id;
+                  
+                  // Map order number to document ID
+                  orderMapping.set(orderNumber, documentId);
+                  addLog(`Mapping order number ${orderNumber} to document ID ${documentId}`);
+                });
                 
-                const orderData = order214599.data();
-                const correctOrderId = order214599.id; // This should be "214599"
-                
-                addLog(`Found order ${correctOrderId} with order number ${orderData.orderNumber}`);
-                
-                // Get order lines and update them to use the correct orderId
+                // Get all order lines and fix their orderId references
                 const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
                 let updatedCount = 0;
                 
                 orderLinesSnapshot.forEach((lineDoc) => {
                   const lineData = lineDoc.data();
-                  if (lineData.orderId === "214600" && lineData.orderId !== correctOrderId) {
-                    updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
-                      orderId: correctOrderId
-                    });
-                    addLog(`Updated order line ${lineDoc.id} from orderId "214600" to "${correctOrderId}"`);
-                    updatedCount++;
+                  const currentOrderId = lineData.orderId;
+                  
+                  // Find the order number this line belongs to
+                  // We need to find the order that has this line
+                  const orderNumber = lineData.orderNumber || lineData.orderInfo?.orderNumber;
+                  
+                  if (orderNumber && orderMapping.has(orderNumber)) {
+                    const correctOrderId = orderMapping.get(orderNumber);
+                    
+                    if (correctOrderId && currentOrderId !== correctOrderId) {
+                      updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
+                        orderId: correctOrderId
+                      });
+                      addLog(`Updated order line ${lineDoc.id} from orderId "${currentOrderId}" to "${correctOrderId}" (order number: ${orderNumber})`);
+                      updatedCount++;
+                    }
+                  } else {
+                    addLog(`Could not find order number for line ${lineDoc.id} with orderId "${currentOrderId}"`);
                   }
                 });
                 
@@ -595,7 +607,7 @@ const InitialSyncTab: React.FC = () => {
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
           >
             <Database className="w-4 h-4" />
-            <span>Fix Order Lines</span>
+            <span>Fix ALL Order Lines</span>
           </button>
               <button
                 onClick={testSyncKnownOrders}
