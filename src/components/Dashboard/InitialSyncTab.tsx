@@ -546,6 +546,57 @@ const InitialSyncTab: React.FC = () => {
             <Trash2 className="w-4 h-4" />
             <span>Cleanup Duplicates</span>
           </button>
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Fixing order line references...');
+              try {
+                const { collection, getDocs, doc, updateDoc } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const db = getFirestore();
+                
+                // Get the order document that exists
+                const orderDoc = await getDocs(collection(db, 'ongoingOrders'));
+                const order214599 = orderDoc.docs.find(doc => doc.id === '214599');
+                
+                if (!order214599) {
+                  addLog('Order 214599 not found');
+                  return;
+                }
+                
+                const orderData = order214599.data();
+                const correctOrderId = order214599.id; // This should be "214599"
+                
+                addLog(`Found order ${correctOrderId} with order number ${orderData.orderNumber}`);
+                
+                // Get order lines and update them to use the correct orderId
+                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
+                let updatedCount = 0;
+                
+                orderLinesSnapshot.forEach((lineDoc) => {
+                  const lineData = lineDoc.data();
+                  if (lineData.orderId === "214600" && lineData.orderId !== correctOrderId) {
+                    updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
+                      orderId: correctOrderId
+                    });
+                    addLog(`Updated order line ${lineDoc.id} from orderId "214600" to "${correctOrderId}"`);
+                    updatedCount++;
+                  }
+                });
+                
+                addLog(`Fixed ${updatedCount} order line references`);
+              } catch (err: any) {
+                addLog(`Fix order lines error: ${err.message}`);
+              }
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Database className="w-4 h-4" />
+            <span>Fix Order Lines</span>
+          </button>
               <button
                 onClick={testSyncKnownOrders}
                 className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"
