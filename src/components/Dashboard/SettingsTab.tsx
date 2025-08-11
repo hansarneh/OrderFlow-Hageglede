@@ -23,11 +23,16 @@ import {
   Plus,
   Users,
   User,
-  Play
+  Play,
+  Key,
+  Info,
+  Wrench,
+  Bug
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getIntegrations, saveIntegration } from '../../lib/firebaseUtils';
 import InitialSyncTab from './InitialSyncTab';
+import DebugTab from './DebugTab';
 
 interface WooCommerceCredentials {
   storeUrl: string;
@@ -315,6 +320,7 @@ const SettingsTab: React.FC = () => {
     { id: 'integrations', label: 'Integrations', icon: Settings },
     { id: 'users', label: 'User Management', icon: Users },
     { id: 'initial-sync', label: 'Initial Sync', icon: Play },
+    { id: 'debug', label: 'Debug', icon: Bug }
   ];
 
   return (
@@ -662,6 +668,7 @@ const SettingsTab: React.FC = () => {
       )}
 
       {activeSection === 'initial-sync' && <InitialSyncTab />}
+      {activeSection === 'debug' && <DebugTab />}
 
       {/* Add/Edit User Modal */}
       {showAddUserModal && (

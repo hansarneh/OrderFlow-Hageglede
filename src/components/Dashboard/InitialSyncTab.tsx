@@ -1,82 +1,41 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  Play,
-  Pause,
-  Target,
-  BarChart3,
-  CheckCircle,
-  AlertTriangle,
-  Loader2,
-  RefreshCw,
-  Database,
-  Calendar,
-  Clock,
-  Package,
-  ShoppingCart,
-  Truck,
-  FileText,
-  Zap,
-  Settings,
-  Info,
-  Trash2,
-  Search,
-  Wrench
+import React, { useState } from 'react';
+import { 
+  Play, 
+  Square, 
+  RefreshCw, 
+  AlertCircle,
+  Info
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-
-interface SyncConfig {
-  source: 'woocommerce' | 'ongoing_wms' | 'both';
-  strategy: 'known-orders-first' | 'date-range' | 'status-based';
-  dateRange: 'last-7-days' | 'last-30-days' | 'last-90-days' | 'custom';
-  maxOrders: number;
-  knownOrderIds: string[];
-  statuses: number[];
-}
-
-interface SyncProgress {
-  isRunning: boolean;
-  currentStep: string;
-  progress: number;
-  totalSteps: number;
-  currentStepNumber: number;
-  syncedOrders: number;
-  errors: number;
-  logs: string[];
-}
 
 const InitialSyncTab: React.FC = () => {
   const { user } = useAuth();
-  const functions = getFunctions();
-  const cancellationRef = useRef<boolean>(false);
-
-  const [syncConfig, setSyncConfig] = useState<SyncConfig>({
-    source: 'ongoing_wms',
-    strategy: 'known-orders-first',
-    dateRange: 'last-30-days',
-    maxOrders: 50,
-    knownOrderIds: ['214600', '216042'],
-    statuses: [200, 210, 300, 320, 400, 450, 451]  // Multiple statuses to catch orders in different states
-  });
-
-  const [syncProgress, setSyncProgress] = useState<SyncProgress>({
+  const [error, setError] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState({
     isRunning: false,
     currentStep: '',
     progress: 0,
-    totalSteps: 0,
-    currentStepNumber: 0,
     syncedOrders: 0,
     errors: 0,
-    logs: []
+    logs: [] as string[]
   });
 
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [syncConfig, setSyncConfig] = useState({
+    source: 'ongoing_wms' as 'ongoing_wms' | 'woocommerce' | 'both',
+    strategy: 'status-based' as 'status-based' | 'date-range',
+    maxOrders: 10,
+    dateRange: {
+      start: '',
+      end: ''
+    },
+    statuses: [200, 210, 300, 320, 400, 450, 451]
+  });
 
   const addLog = (message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
     setSyncProgress(prev => ({
       ...prev,
-      logs: [...prev.logs, `${new Date().toLocaleTimeString()}: ${message}`]
+      logs: [...prev.logs, `${timestamp}: ${message}`]
     }));
   };
 
@@ -86,50 +45,29 @@ const InitialSyncTab: React.FC = () => {
       return;
     }
 
-    // Reset cancellation flag
-    cancellationRef.current = false;
-
     setError(null);
-    setSuccess(null);
     setSyncProgress({
       isRunning: true,
       currentStep: 'Initializing sync...',
       progress: 0,
-      totalSteps: 0,
-      currentStepNumber: 0,
       syncedOrders: 0,
       errors: 0,
       logs: []
     });
 
-    addLog('Starting initial sync...');
-
     try {
       if (syncConfig.source === 'ongoing_wms' || syncConfig.source === 'both') {
-        if (cancellationRef.current) {
-          addLog('Sync cancelled by user');
-          return;
-        }
         await syncOngoingWMS();
       }
-
+      
       if (syncConfig.source === 'woocommerce' || syncConfig.source === 'both') {
-        if (cancellationRef.current) {
-          addLog('Sync cancelled by user');
-          return;
-        }
         await syncWooCommerce();
       }
 
-      if (!cancellationRef.current) {
-        setSuccess('Initial sync completed successfully!');
-        addLog('Initial sync completed successfully!');
-      }
+      addLog('🎉 Initial sync completed successfully!');
     } catch (err: any) {
-      if (!cancellationRef.current) {
-        setError(err.message || 'Sync failed');
-        addLog(`Error: ${err.message}`);
-      }
+      addLog(`❌ Sync failed: ${err.message}`);
+      setError(err.message);
     } finally {
       setSyncProgress(prev => ({ ...prev, isRunning: false }));
     }
@@ -137,1085 +75,281 @@ const InitialSyncTab: React.FC = () => {
 
   const syncOngoingWMS = async () => {
     addLog('Starting Ongoing WMS sync...');
-    
-    const totalStatuses = syncConfig.statuses.length;
-    let totalSynced = 0;
-    let totalErrors = 0;
+    setSyncProgress(prev => ({ ...prev, currentStep: 'Syncing Ongoing WMS orders...' }));
 
-    for (let i = 0; i < syncConfig.statuses.length; i++) {
-      // Check for cancellation before each status
-      if (cancellationRef.current) {
-        addLog('Ongoing WMS sync cancelled by user');
-        return;
-      }
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { getFunctions } = await import('firebase/functions');
+      const functions = getFunctions();
 
-      const status = syncConfig.statuses[i];
-      const progress = ((i + 1) / totalStatuses) * 100;
-      
-      setSyncProgress(prev => ({
-        ...prev,
-        currentStep: `Syncing orders with status ${status}...`,
-        progress,
-        currentStepNumber: i + 1,
-        totalSteps: totalStatuses
-      }));
+      let totalSynced = 0;
+      let totalErrors = 0;
 
-      addLog(`Syncing orders with status ${status}...`);
-
-      try {
+      for (const status of syncConfig.statuses) {
+        addLog(`Syncing orders with status ${status}...`);
+        
         const syncOrders = httpsCallable(functions, 'syncOngoingOrdersByStatus');
-        const result = await syncOrders({
-          status,
-          limit: Math.min(syncConfig.maxOrders, 10),  // Limit to 10 per status to avoid timeouts
-          goodsOwnerId: 85
+        const result = await syncOrders({ 
+          status, 
+          limit: syncConfig.maxOrders 
         });
-
-        // Check for cancellation after the function call
-        if (cancellationRef.current) {
-          addLog('Ongoing WMS sync cancelled by user');
-          return;
-        }
-
+        
         const data = result.data as any;
-        if (data.success) {
-          totalSynced += data.totalSynced;
-          totalErrors += data.errors?.length || 0;
-          addLog(`Status ${status}: Synced ${data.totalSynced} orders, ${data.errors?.length || 0} errors`);
+
+        if (data.error) {
+          addLog(`❌ Error syncing status ${status}: ${data.error}`);
+          totalErrors++;
         } else {
-          totalErrors++;
-          addLog(`Status ${status}: Failed to sync`);
+          addLog(`✅ Synced ${data.totalSynced} orders with status ${status}`);
+          totalSynced += data.totalSynced;
         }
-      } catch (err: any) {
-        if (!cancellationRef.current) {
-          totalErrors++;
-          addLog(`Status ${status}: Error - ${err.message}`);
-        }
+
+        setSyncProgress(prev => ({ 
+          ...prev, 
+          syncedOrders: totalSynced,
+          errors: totalErrors,
+          progress: ((syncConfig.statuses.indexOf(status) + 1) / syncConfig.statuses.length) * 100
+        }));
       }
-    }
 
-    if (!cancellationRef.current) {
-      setSyncProgress(prev => ({
-        ...prev,
-        syncedOrders: totalSynced,
-        errors: totalErrors
-      }));
-
-      addLog(`Ongoing WMS sync completed: ${totalSynced} orders synced, ${totalErrors} errors`);
+      addLog(`✅ Ongoing WMS sync completed: ${totalSynced} orders synced, ${totalErrors} errors`);
+    } catch (err: any) {
+      addLog(`❌ Ongoing WMS sync error: ${err.message}`);
+      throw err;
     }
   };
 
   const syncWooCommerce = async () => {
     addLog('Starting WooCommerce sync...');
-    
-    setSyncProgress(prev => ({
-      ...prev,
-      currentStep: 'Syncing WooCommerce orders...',
-      progress: 50
-    }));
+    setSyncProgress(prev => ({ ...prev, currentStep: 'Syncing WooCommerce orders...' }));
 
     try {
-      const syncOrders = httpsCallable(functions, 'syncWooCommerceOrders');
-      const result = await syncOrders({
-        statusFilter: 'processing,delvis-levert',
-        dateRange: 'last-200-days'
-      });
+      const { httpsCallable } = await import('firebase/functions');
+      const { getFunctions } = await import('firebase/functions');
+      const functions = getFunctions();
 
-      // Check for cancellation after the function call
-      if (cancellationRef.current) {
-        addLog('WooCommerce sync cancelled by user');
-        return;
-      }
-
+      const syncWooCommerceOrders = httpsCallable(functions, 'syncWooCommerceOrders');
+      const result = await syncWooCommerceOrders();
+      
       const data = result.data as any;
-      if (data.success) {
-        addLog(`WooCommerce sync completed: ${data.syncedCount} orders synced`);
+
+      if (data.error) {
+        addLog(`❌ WooCommerce sync error: ${data.error}`);
       } else {
-        addLog('WooCommerce sync failed');
+        addLog(`✅ WooCommerce sync completed: ${data.syncedCount} orders synced`);
       }
     } catch (err: any) {
-      if (!cancellationRef.current) {
-        addLog(`WooCommerce sync error: ${err.message}`);
-      }
+      addLog(`❌ WooCommerce sync error: ${err.message}`);
+      throw err;
     }
   };
 
-  const stopSync = async () => {
-    // Set cancellation flag
-    cancellationRef.current = true;
-    
-    // Set cancellation flag in Firestore for the Firebase Function to check
-    try {
-      const { doc, setDoc } = await import('firebase/firestore');
-      const { getFirestore } = await import('firebase/firestore');
-      const db = getFirestore();
-      
-      await setDoc(doc(db, 'syncCancellation', user?.id || 'unknown'), {
-        cancelled: true,
-        timestamp: new Date()
-      });
-    } catch (error) {
-      console.log('Could not set cancellation flag:', error);
-    }
-    
+  const stopSync = () => {
     setSyncProgress(prev => ({ ...prev, isRunning: false }));
-    addLog('Sync cancellation requested...');
-    addLog('Note: Firebase Functions may continue running for a few seconds');
+    addLog('⏹️ Sync stopped by user');
   };
 
   const clearLogs = () => {
     setSyncProgress(prev => ({ ...prev, logs: [] }));
   };
 
-  const runDiagnostic = async () => {
-    if (!user?.id) {
-      setError('User not authenticated');
-      return;
-    }
-
-    addLog('Running diagnostic on known orders...');
-
-    try {
-      const diagnoseOrders = httpsCallable(functions, 'diagnoseOngoingOrders');
-      const result = await diagnoseOrders({
-        orderIds: [214600, 216042]
-      });
-
-      const data = result.data as any;
-      if (data.success) {
-        addLog('Diagnostic results:');
-        data.results.forEach((order: any) => {
-          if (order.found) {
-            addLog(`Order ${order.orderId}: Status ${order.status.number} (${order.status.text}) - ${order.orderLines} order lines`);
-          } else {
-            addLog(`Order ${order.orderId}: ${order.error}`);
-          }
-        });
-      } else {
-        addLog('Diagnostic failed');
-      }
-    } catch (err: any) {
-      addLog(`Diagnostic error: ${err.message}`);
-    }
-  };
-
-  const testSyncKnownOrders = async () => {
-    if (!user?.id) {
-      setError('User not authenticated');
-      return;
-    }
-
-    // Use the first status from sync config, or default to 320
-    const statusToTest = syncConfig.statuses.length > 0 ? syncConfig.statuses[0] : 320;
-    
-    addLog(`Testing sync with known orders only (status: ${statusToTest})...`);
-
-    try {
-      const testSync = httpsCallable(functions, 'testSyncKnownOrders');
-      const result = await testSync({
-        status: statusToTest
-      });
-
-      const data = result.data as any;
-      if (data.success) {
-        addLog(`Test sync completed: ${data.totalSynced} orders synced, ${data.errors.length} errors`);
-        if (data.syncedOrders.length > 0) {
-          addLog('Synced orders:');
-          data.syncedOrders.forEach((order: any) => {
-            addLog(`- Order ${order.orderId} (${order.orderNumber}): ${order.status}`);
-          });
-        }
-        if (data.errors.length > 0) {
-          addLog('Errors:');
-          data.errors.forEach((error: any) => {
-            addLog(`- Order ${error.orderId}: ${error.error}`);
-          });
-        }
-      } else {
-        addLog('Test sync failed');
-      }
-    } catch (err: any) {
-      addLog(`Test sync error: ${err.message}`);
-    }
-  };
-
-  const testOrder214600 = async () => {
-    if (!user?.id) {
-      setError('User not authenticated');
-      return;
-    }
-
-    addLog('Testing ONLY order 214600...');
-
-    try {
-      const diagnoseOrders = httpsCallable(functions, 'diagnoseOngoingOrders');
-      const result = await diagnoseOrders({
-        orderIds: [214600]
-      });
-
-      const data = result.data as any;
-      if (data.success) {
-        addLog('Order 214600 diagnostic results:');
-        data.results.forEach((order: any) => {
-          if (order.found) {
-            addLog(`Order ${order.orderId}: Status ${order.status.number} (${order.status.text}) - ${order.orderLines} order lines`);
-            addLog(`Raw status data: ${JSON.stringify(order.rawStatus, null, 2)}`);
-          } else {
-            addLog(`Order ${order.orderId}: ${order.error}`);
-          }
-        });
-      } else {
-        addLog('Diagnostic failed');
-      }
-    } catch (err: any) {
-      addLog(`Diagnostic error: ${err.message}`);
-    }
-  };
-
-  const checkFirestoreOrders = async () => {
-    if (!user?.id) {
-      setError('User not authenticated');
-      return;
-    }
-
-    addLog('Checking what orders are stored in Firestore...');
-
-    try {
-      const { collection, getDocs } = await import('firebase/firestore');
-      const { getFirestore } = await import('firebase/firestore');
-      const db = getFirestore();
-      
-      const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-      const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
-      
-      addLog(`Found ${ordersSnapshot.size} orders in ongoingOrders collection`);
-      addLog(`Found ${orderLinesSnapshot.size} order lines in ongoingOrderLines collection`);
-      
-      addLog('Sample orders:');
-      ordersSnapshot.forEach((doc) => {
-        const data = doc.data();
-        addLog(`Order ${doc.id}: ${data.orderNumber} - Status: ${data.orderStatus?.text || 'Unknown'} - Document ID: ${doc.id}`);
-      });
-      
-      addLog('Sample order lines:');
-      orderLinesSnapshot.forEach((doc) => {
-        const data = doc.data();
-        addLog(`Order line ${doc.id}: orderId="${data.orderId}", articleName="${data.articleName || 'N/A'}"`);
-        addLog(`  Full data: ${JSON.stringify(data, null, 2)}`);
-      });
-      
-    } catch (err: any) {
-      addLog(`Firestore check error: ${err.message}`);
-    }
-  };
-
-  const cleanupDuplicateOrders = async () => {
-    if (!user?.id) {
-      setError('User not authenticated');
-      return;
-    }
-
-    addLog('Cleaning up duplicate orders...');
-
-    try {
-      const { collection, getDocs, doc, deleteDoc } = await import('firebase/firestore');
-      const { getFirestore } = await import('firebase/firestore');
-      const db = getFirestore();
-      
-      const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-      
-      // Find orders with the same order number but different document IDs
-      const orderNumberMap = new Map();
-      const duplicatesToDelete = [];
-      
-      ordersSnapshot.forEach((docSnapshot) => {
-        const data = docSnapshot.data();
-        const orderNumber = data.orderNumber;
-        
-        if (orderNumberMap.has(orderNumber)) {
-          // This is a duplicate - keep the one with the order number as document ID
-          const existingDocId = orderNumberMap.get(orderNumber);
-          const currentDocId = docSnapshot.id;
-          
-          if (existingDocId === orderNumber.toString()) {
-            // Keep existing, delete current
-            duplicatesToDelete.push(currentDocId);
-          } else if (currentDocId === orderNumber.toString()) {
-            // Keep current, delete existing
-            duplicatesToDelete.push(existingDocId);
-            orderNumberMap.set(orderNumber, currentDocId);
-          } else {
-            // Neither has order number as document ID, keep the first one
-            duplicatesToDelete.push(currentDocId);
-          }
-        } else {
-          orderNumberMap.set(orderNumber, docSnapshot.id);
-        }
-      });
-      
-      addLog(`Found ${duplicatesToDelete.length} duplicate orders to delete`);
-      
-      // Delete duplicates
-      for (const docId of duplicatesToDelete) {
-        await deleteDoc(doc(db, 'ongoingOrders', docId));
-        addLog(`Deleted duplicate order document: ${docId}`);
-      }
-      
-      addLog('Cleanup completed!');
-      
-    } catch (err: any) {
-      addLog(`Cleanup error: ${err.message}`);
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Initial Sync</h2>
-          <p className="text-gray-600 mt-1">Perform initial data synchronization from your integrated systems</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          {!syncProgress.isRunning ? (
-            <>
-              <button
-                onClick={runDiagnostic}
-                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center space-x-2"
-              >
-                <Target className="w-4 h-4" />
-                <span>Diagnostic</span>
-              </button>
-              <button
-                onClick={testOrder214600}
-                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors duration-200 flex items-center space-x-2"
-              >
-                <Target className="w-4 h-4" />
-                <span>Test 214600</span>
-              </button>
-                        <button
-            onClick={checkFirestoreOrders}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Database className="w-4 h-4" />
-            <span>Check DB</span>
-          </button>
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Cleaning up duplicate orders...');
-              try {
-                const { collection, getDocs, doc, deleteDoc } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const db = getFirestore();
-                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-                const orderNumberMap: Map<string, string> = new Map();
-                const duplicatesToDelete: string[] = [];
-                ordersSnapshot.forEach((docSnapshot) => {
-                  const data = docSnapshot.data();
-                  const orderNumber = data.orderNumber;
-                  if (orderNumberMap.has(orderNumber)) {
-                    const existingDocId = orderNumberMap.get(orderNumber);
-                    const currentDocId = docSnapshot.id;
-                    if (existingDocId && existingDocId === orderNumber.toString()) {
-                      duplicatesToDelete.push(currentDocId);
-                    } else if (currentDocId === orderNumber.toString()) {
-                      if (existingDocId) {
-                        duplicatesToDelete.push(existingDocId);
-                      }
-                      orderNumberMap.set(orderNumber, currentDocId);
-                    } else {
-                      duplicatesToDelete.push(currentDocId);
-                    }
-                  } else {
-                    orderNumberMap.set(orderNumber, docSnapshot.id);
-                  }
-                });
-                addLog(`Found ${duplicatesToDelete.length} duplicate orders to delete`);
-                for (const docId of duplicatesToDelete) {
-                  await deleteDoc(doc(db, 'ongoingOrders', docId));
-                  addLog(`Deleted duplicate order document: ${docId}`);
-                }
-                addLog('Cleanup completed!');
-              } catch (err: any) {
-                addLog(`Cleanup error: ${err.message}`);
-              }
-            }}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Cleanup Duplicates</span>
-          </button>
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Fixing order line references to use correct document IDs...');
-              try {
-                const { collection, getDocs, doc, updateDoc } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const db = getFirestore();
-                
-                // Get all orders to create a mapping from orderNumber to documentId
-                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-                const orderNumberToDocId = new Map<string, string>();
-                
-                ordersSnapshot.forEach((orderDoc) => {
-                  const orderData = orderDoc.data();
-                  const orderNumber = orderData.orderNumber;
-                  const documentId = orderDoc.id;
-                  orderNumberToDocId.set(orderNumber, documentId);
-                  addLog(`Mapping: orderNumber ${orderNumber} → documentId ${documentId}`);
-                });
-                
-                // Get all order lines and fix their orderId
-                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
-                let fixedCount = 0;
-                
-                orderLinesSnapshot.forEach((lineDoc) => {
-                  const lineData = lineDoc.data();
-                  const currentOrderId = lineData.orderId;
-                  const orderNumber = lineData.orderNumber;
-                  
-                  if (orderNumber && orderNumberToDocId.has(orderNumber)) {
-                    const correctOrderId = orderNumberToDocId.get(orderNumber);
-                    
-                    if (correctOrderId && currentOrderId !== correctOrderId) {
-                      updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
-                        orderId: correctOrderId
-                      });
-                      addLog(`Fixed: ${lineDoc.id} orderId "${currentOrderId}" → "${correctOrderId}" (orderNumber: ${orderNumber})`);
-                      fixedCount++;
-                    } else {
-                      addLog(`Already correct: ${lineDoc.id} orderId "${currentOrderId}" (orderNumber: ${orderNumber})`);
-                    }
-                  } else {
-                    addLog(`ERROR: ${lineDoc.id} missing orderNumber or no mapping found`);
-                  }
-                });
-                
-                addLog(`Fixed ${fixedCount} order line references`);
-              } catch (err: any) {
-                addLog(`Fix order line references error: ${err.message}`);
-              }
-            }}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Wrench className="w-4 h-4" />
-            <span>Fix Order Line References</span>
-          </button>
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Fixing ALL order line references...');
-              try {
-                const { collection, getDocs, doc, updateDoc } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const db = getFirestore();
-                
-                // Get all orders to create a mapping
-                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-                const orderMapping = new Map<string, string>();
-                
-                ordersSnapshot.forEach((orderDoc) => {
-                  const orderData = orderDoc.data();
-                  const orderNumber = orderData.orderNumber;
-                  const documentId = orderDoc.id;
-                  
-                  // Map order number to document ID
-                  orderMapping.set(orderNumber, documentId);
-                  addLog(`Mapping order number ${orderNumber} to document ID ${documentId}`);
-                });
-                
-                // Get all order lines and fix their orderId references
-                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
-                let updatedCount = 0;
-                
-                orderLinesSnapshot.forEach((lineDoc) => {
-                  const lineData = lineDoc.data();
-                  const currentOrderId = lineData.orderId;
-                  
-                  // Find the order number this line belongs to
-                  // We need to find the order that has this line
-                  const orderNumber = lineData.orderNumber || lineData.orderInfo?.orderNumber;
-                  
-                  if (orderNumber && orderMapping.has(orderNumber)) {
-                    const correctOrderId = orderMapping.get(orderNumber);
-                    
-                    if (correctOrderId && currentOrderId !== correctOrderId) {
-                      updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
-                        orderId: correctOrderId
-                      });
-                      addLog(`Updated order line ${lineDoc.id} from orderId "${currentOrderId}" to "${correctOrderId}" (order number: ${orderNumber})`);
-                      updatedCount++;
-                    }
-                  } else {
-                    // Try to find the order by the current orderId and add the orderNumber to the line
-                    const orderDoc = ordersSnapshot.docs.find(doc => doc.id === currentOrderId);
-                    if (orderDoc) {
-                      const orderData = orderDoc.data();
-                      const orderNumber = orderData.orderNumber;
-                      
-                      updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
-                        orderNumber: orderNumber
-                      });
-                      addLog(`Added orderNumber "${orderNumber}" to order line ${lineDoc.id} (orderId: "${currentOrderId}")`);
-                      updatedCount++;
-                    } else {
-                      addLog(`Could not find order for line ${lineDoc.id} with orderId "${currentOrderId}"`);
-                    }
-                  }
-                });
-                
-                addLog(`Fixed ${updatedCount} order line references`);
-              } catch (err: any) {
-                addLog(`Fix order lines error: ${err.message}`);
-              }
-            }}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Database className="w-4 h-4" />
-            <span>Fix ALL Order Lines</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Checking ALL order lines in database...');
-              try {
-                const { collection, getDocs } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const db = getFirestore();
-                
-                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
-                addLog(`Found ${orderLinesSnapshot.size} total order lines in database`);
-                
-                orderLinesSnapshot.forEach((lineDoc) => {
-                  const lineData = lineDoc.data();
-                  addLog(`Order line ${lineDoc.id}: orderId="${lineData.orderId}", orderNumber="${lineData.orderNumber || 'MISSING'}"`);
-                });
-              } catch (err: any) {
-                addLog(`Check ALL order lines error: ${err.message}`);
-              }
-            }}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Search className="w-4 h-4" />
-            <span>Check ALL Order Lines</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Checking both orderLines and ongoingOrderLines collections...');
-              try {
-                const { collection, getDocs } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const db = getFirestore();
-                
-                // Check WooCommerce orderLines
-                const wooOrderLinesSnapshot = await getDocs(collection(db, 'orderLines'));
-                addLog(`Found ${wooOrderLinesSnapshot.size} WooCommerce order lines in 'orderLines' collection`);
-                
-                if (wooOrderLinesSnapshot.size > 0) {
-                  addLog('Sample WooCommerce order lines:');
-                  wooOrderLinesSnapshot.docs.slice(0, 3).forEach((lineDoc) => {
-                    const lineData = lineDoc.data();
-                    addLog(`  WooCommerce: ${lineDoc.id}: orderId="${lineData.orderId}"`);
-                  });
-                }
-                
-                // Check Ongoing WMS orderLines
-                const ongoingOrderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
-                addLog(`Found ${ongoingOrderLinesSnapshot.size} Ongoing WMS order lines in 'ongoingOrderLines' collection`);
-                
-                if (ongoingOrderLinesSnapshot.size > 0) {
-                  addLog('Sample Ongoing WMS order lines:');
-                  ongoingOrderLinesSnapshot.docs.slice(0, 3).forEach((lineDoc) => {
-                    const lineData = lineDoc.data();
-                    addLog(`  Ongoing WMS: ${lineDoc.id}: orderId="${lineData.orderId}", orderNumber="${lineData.orderNumber || 'MISSING'}"`);
-                  });
-                }
-                
-                // Check orders collections
-                const wooOrdersSnapshot = await getDocs(collection(db, 'customerOrders'));
-                const ongoingOrdersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-                addLog(`Found ${wooOrdersSnapshot.size} WooCommerce orders in 'customerOrders' collection`);
-                addLog(`Found ${ongoingOrdersSnapshot.size} Ongoing WMS orders in 'ongoingOrders' collection`);
-                
-              } catch (err: any) {
-                addLog(`Check both collections error: ${err.message}`);
-              }
-            }}
-            className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Database className="w-4 h-4" />
-            <span>Check Both Collections</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Syncing ALL Ongoing WMS order lines for existing orders...');
-              try {
-                const { collection, getDocs } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const { httpsCallable } = await import('firebase/functions');
-                const { getFunctions } = await import('firebase/functions');
-                const db = getFirestore();
-                const functions = getFunctions();
-                
-                // Get all Ongoing WMS orders
-                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-                addLog(`Found ${ordersSnapshot.size} Ongoing WMS orders to sync order lines for`);
-                
-                let syncedCount = 0;
-                let errorCount = 0;
-                
-                // Process each order to sync its order lines
-                for (const orderDoc of ordersSnapshot.docs) {
-                  const orderData = orderDoc.data();
-                  const orderNumber = orderData.orderNumber;
-                  const ongoingOrderId = orderData.ongoingOrderId;
-                  
-                  addLog(`Syncing order lines for order ${orderNumber} (Ongoing ID: ${ongoingOrderId})...`);
-                  
-                  try {
-                    // Call the Firebase Function to sync order lines for this specific order
-                    const syncOrderLines = httpsCallable(functions, 'syncOngoingOrderLinesByOrderId');
-                    const result = await syncOrderLines({ 
-                      orderId: ongoingOrderId,
-                      orderNumber: orderNumber,
-                      documentId: orderDoc.id
-                    });
-                    
-                    const data = result.data as any;
-                    if (data.success) {
-                      addLog(`✅ Synced ${data.orderLinesCount} order lines for order ${orderNumber}`);
-                      syncedCount += data.orderLinesCount;
-                    } else {
-                      addLog(`❌ Failed to sync order lines for order ${orderNumber}: ${data.error}`);
-                      errorCount++;
-                    }
-                  } catch (err: any) {
-                    addLog(`❌ Error syncing order lines for order ${orderNumber}: ${err.message}`);
-                    errorCount++;
-                  }
-                  
-                  // Small delay to avoid overwhelming the API
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                }
-                
-                addLog(`🎉 Sync completed! Synced ${syncedCount} order lines, ${errorCount} errors`);
-              } catch (err: any) {
-                addLog(`Sync ALL order lines error: ${err.message}`);
-              }
-            }}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Sync ALL Ongoing WMS Order Lines</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Checking actual order line data structure...');
-              try {
-                const { collection, getDocs } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const db = getFirestore();
-                
-                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
-                addLog(`Found ${orderLinesSnapshot.size} order lines in database`);
-                
-                if (orderLinesSnapshot.size > 0) {
-                  // Show first 3 order lines with full data structure
-                  orderLinesSnapshot.docs.slice(0, 3).forEach((lineDoc, index) => {
-                    const lineData = lineDoc.data();
-                    addLog(`Order line ${index + 1} (${lineDoc.id}):`);
-                    addLog(`  orderId: "${lineData.orderId}"`);
-                    addLog(`  orderNumber: "${lineData.orderNumber}"`);
-                    addLog(`  productName: "${lineData.productName || lineData.articleName || 'MISSING'}"`);
-                    addLog(`  sku: "${lineData.sku || lineData.articleNumber || 'MISSING'}"`);
-                    addLog(`  quantity: ${lineData.quantity || lineData.orderedQuantity || 'MISSING'}`);
-                    addLog(`  unitPrice: ${lineData.unitPrice || lineData.linePrice || 'MISSING'}`);
-                    addLog(`  totalPrice: ${lineData.totalPrice || lineData.linePrice || 'MISSING'}`);
-                    addLog(`  Full data:`, lineData);
-                  });
-                }
-              } catch (err: any) {
-                addLog(`Check order line structure error: ${err.message}`);
-              }
-            }}
-            className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <Search className="w-4 h-4" />
-            <span>Check Order Line Structure</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              if (!user?.id) {
-                setError('User not authenticated');
-                return;
-              }
-              addLog('Re-syncing order lines with correct data mapping...');
-              try {
-                const { collection, getDocs, doc, deleteDoc } = await import('firebase/firestore');
-                const { getFirestore } = await import('firebase/firestore');
-                const { httpsCallable } = await import('firebase/functions');
-                const { getFunctions } = await import('firebase/functions');
-                const db = getFirestore();
-                const functions = getFunctions();
-                
-                // First, delete all existing order lines
-                addLog('Deleting existing order lines...');
-                const existingOrderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
-                let deletedCount = 0;
-                
-                for (const lineDoc of existingOrderLinesSnapshot.docs) {
-                  await deleteDoc(doc(db, 'ongoingOrderLines', lineDoc.id));
-                  deletedCount++;
-                }
-                
-                addLog(`Deleted ${deletedCount} existing order lines`);
-                
-                // Now re-sync all order lines with correct mapping
-                addLog('Re-syncing order lines with correct data mapping...');
-                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-                addLog(`Found ${ordersSnapshot.size} Ongoing WMS orders to re-sync`);
-                
-                let syncedCount = 0;
-                let errorCount = 0;
-                
-                // Process each order to sync its order lines
-                for (const orderDoc of ordersSnapshot.docs) {
-                  const orderData = orderDoc.data();
-                  const orderNumber = orderData.orderNumber;
-                  const ongoingOrderId = orderData.ongoingOrderId;
-                  
-                  addLog(`Re-syncing order lines for order ${orderNumber} (Ongoing ID: ${ongoingOrderId})...`);
-                  
-                  try {
-                    // Call the Firebase Function to sync order lines for this specific order
-                    const syncOrderLines = httpsCallable(functions, 'syncOngoingOrderLinesByOrderId');
-                    const result = await syncOrderLines({ 
-                      orderId: ongoingOrderId,
-                      orderNumber: orderNumber,
-                      documentId: orderDoc.id
-                    });
-                    
-                    const data = result.data as any;
-                    if (data.success) {
-                      addLog(`✅ Re-synced ${data.orderLinesCount} order lines for order ${orderNumber}`);
-                      syncedCount += data.orderLinesCount;
-                    } else {
-                      addLog(`❌ Failed to re-sync order lines for order ${orderNumber}: ${data.error}`);
-                      errorCount++;
-                    }
-                  } catch (err: any) {
-                    addLog(`❌ Error re-syncing order lines for order ${orderNumber}: ${err.message}`);
-                    errorCount++;
-                  }
-                  
-                  // Small delay to avoid overwhelming the API
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                }
-                
-                addLog(`🎉 Re-sync completed! Synced ${syncedCount} order lines, ${errorCount} errors`);
-              } catch (err: any) {
-                addLog(`Re-sync order lines error: ${err.message}`);
-              }
-            }}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Re-sync Order Lines with Correct Data</span>
-          </button>
-              <button
-                onClick={testSyncKnownOrders}
-                className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"
-              >
-                <Package className="w-4 h-4" />
-                <span>Test Sync</span>
-              </button>
-              <button
-                onClick={startSync}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
-              >
-                <Play className="w-4 h-4" />
-                <span>Start Sync</span>
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={stopSync}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
-            >
-              <Pause className="w-4 h-4" />
-              <span>Stop Sync</span>
-            </button>
-          )}
-        </div>
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Initial Data Sync</h2>
+        <p className="text-gray-600 mt-2">Perform initial synchronization of orders and products from integrated systems</p>
       </div>
 
-      {/* Error/Success Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <div className="flex items-center space-x-3">
-            <AlertTriangle className="w-5 h-5 text-red-600" />
-            <div className="text-red-800 text-sm">{error}</div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <AlertCircle className="w-5 h-5 text-red-400 mr-2" />
+            <span className="text-red-800">{error}</span>
           </div>
         </div>
       )}
 
-      {success && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-          <div className="flex items-center space-x-3">
-            <CheckCircle className="w-5 h-5 text-green-600" />
-            <div className="text-green-800 text-sm">{success}</div>
+      {/* Sync Configuration */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Sync Configuration</h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Data Source */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Data Source</label>
+            <select
+              value={syncConfig.source}
+              onChange={(e) => setSyncConfig({ ...syncConfig, source: e.target.value as any })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="ongoing_wms">Ongoing WMS</option>
+              <option value="woocommerce">WooCommerce</option>
+              <option value="both">Both Systems</option>
+            </select>
+          </div>
+
+          {/* Sync Strategy */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Sync Strategy</label>
+            <select
+              value={syncConfig.strategy}
+              onChange={(e) => setSyncConfig({ ...syncConfig, strategy: e.target.value as any })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="status-based">Status Based</option>
+              <option value="date-range">Date Range</option>
+            </select>
+          </div>
+
+          {/* Max Orders */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Max Orders per Status</label>
+            <input
+              type="number"
+              value={syncConfig.maxOrders}
+              onChange={(e) => setSyncConfig({ ...syncConfig, maxOrders: parseInt(e.target.value) })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              min="1"
+              max="100"
+            />
           </div>
         </div>
-      )}
 
-      {/* Configuration */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Sync Configuration */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Settings className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Sync Configuration</h3>
-              <p className="text-sm text-gray-600">Configure your initial sync strategy</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {/* Source Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Data Source</label>
-              <select
-                value={syncConfig.source}
-                onChange={(e) => setSyncConfig({ ...syncConfig, source: e.target.value as any })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="ongoing_wms">Ongoing WMS Only</option>
-                <option value="woocommerce">WooCommerce Only</option>
-                <option value="both">Both Sources</option>
-              </select>
-            </div>
-
-            {/* Strategy Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sync Strategy</label>
-              <select
-                value={syncConfig.strategy}
-                onChange={(e) => setSyncConfig({ ...syncConfig, strategy: e.target.value as any })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="known-orders-first">Known Orders First</option>
-                <option value="date-range">Date Range</option>
-                <option value="status-based">Status Based</option>
-              </select>
-            </div>
-
-            {/* Max Orders */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Max Orders per Status</label>
-              <input
-                type="number"
-                value={syncConfig.maxOrders}
-                onChange={(e) => setSyncConfig({ ...syncConfig, maxOrders: parseInt(e.target.value) })}
-                min="1"
-                max="100"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Status Selection - Only show when strategy is status-based */}
-            {syncConfig.strategy === 'status-based' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Statuses to Sync</label>
-                <div className="space-y-2">
-                  {syncConfig.statuses.map((status, index) => (
-                    <div key={index} className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        value={status}
-                        onChange={(e) => {
-                          const newStatuses = [...syncConfig.statuses];
-                          newStatuses[index] = parseInt(e.target.value);
-                          setSyncConfig({ ...syncConfig, statuses: newStatuses });
-                        }}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Status number"
-                      />
-                      <button
-                        onClick={() => {
-                          const newStatuses = syncConfig.statuses.filter((_, i) => i !== index);
-                          setSyncConfig({ ...syncConfig, statuses: newStatuses });
-                        }}
-                        className="px-3 py-2 text-red-600 hover:text-red-800"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+        {/* Status Selection - Only show when strategy is status-based */}
+        {syncConfig.strategy === 'status-based' && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Statuses to Sync</label>
+            <div className="space-y-2">
+              {syncConfig.statuses.map((status, index) => (
+                <div key={index} className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    value={status}
+                    onChange={(e) => {
+                      const newStatuses = [...syncConfig.statuses];
+                      newStatuses[index] = parseInt(e.target.value);
+                      setSyncConfig({ ...syncConfig, statuses: newStatuses });
+                    }}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Status number"
+                  />
                   <button
-                    onClick={() => setSyncConfig({ ...syncConfig, statuses: [...syncConfig.statuses, 200] })}
-                    className="text-blue-600 hover:text-blue-800 text-sm"
+                    onClick={() => {
+                      const newStatuses = syncConfig.statuses.filter((_, i) => i !== index);
+                      setSyncConfig({ ...syncConfig, statuses: newStatuses });
+                    }}
+                    className="px-3 py-2 text-red-600 hover:text-red-800"
                   >
-                    + Add Status
+                    Remove
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Date Range */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
-              <select
-                value={syncConfig.dateRange}
-                onChange={(e) => setSyncConfig({ ...syncConfig, dateRange: e.target.value as any })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              ))}
+              <button
+                onClick={() => setSyncConfig({ ...syncConfig, statuses: [...syncConfig.statuses, 200] })}
+                className="text-blue-600 hover:text-blue-800 text-sm"
               >
-                <option value="last-7-days">Last 7 Days</option>
-                <option value="last-30-days">Last 30 Days</option>
-                <option value="last-90-days">Last 90 Days</option>
-                <option value="custom">Custom Range</option>
-              </select>
+                + Add Status
+              </button>
             </div>
           </div>
-        </div>
-
-        {/* Progress Tracking */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Sync Progress</h3>
-              <p className="text-sm text-gray-600">Track your sync progress</p>
-            </div>
-          </div>
-
-          {syncProgress.isRunning ? (
-            <div className="space-y-4">
-              {/* Progress Bar */}
-              <div>
-                <div className="flex justify-between text-sm text-gray-600 mb-2">
-                  <span>Progress</span>
-                  <span>{Math.round(syncProgress.progress)}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${syncProgress.progress}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              {/* Current Step */}
-              <div>
-                <p className="text-sm font-medium text-gray-700">Current Step</p>
-                <p className="text-sm text-gray-600">{syncProgress.currentStep}</p>
-              </div>
-
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Synced Orders</p>
-                  <p className="text-2xl font-bold text-green-600">{syncProgress.syncedOrders}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Errors</p>
-                  <p className="text-2xl font-bold text-red-600">{syncProgress.errors}</p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">No sync in progress</p>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Sync Logs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-              <FileText className="w-5 h-5 text-gray-600" />
-            </div>
+      {/* Sync Controls */}
+      <div className="flex items-center space-x-4">
+        {!syncProgress.isRunning ? (
+          <button
+            onClick={startSync}
+            disabled={syncProgress.isRunning}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2 disabled:opacity-50"
+          >
+            <Play className="w-5 h-5" />
+            <span>Start Initial Sync</span>
+          </button>
+        ) : (
+          <button
+            onClick={stopSync}
+            className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Stop className="w-5 h-5" />
+            <span>Stop Sync</span>
+          </button>
+        )}
+
+        <button
+          onClick={clearLogs}
+          className="bg-gray-600 text-white px-4 py-3 rounded-lg hover:bg-gray-700 transition-colors duration-200 flex items-center space-x-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Clear Logs</span>
+        </button>
+      </div>
+
+      {/* Progress Tracking */}
+      {syncProgress.isRunning && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Sync Progress</h3>
+          
+          <div className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Sync Logs</h3>
-              <p className="text-sm text-gray-600">Detailed sync activity logs</p>
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Progress</span>
+                <span>{Math.round(syncProgress.progress)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${syncProgress.progress}%` }}
+                ></div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{syncProgress.syncedOrders}</div>
+                <div className="text-sm text-gray-600">Orders Synced</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">{syncProgress.errors}</div>
+                <div className="text-sm text-gray-600">Errors</div>
+              </div>
+              <div className="text-center">
+                <div className="text-sm text-gray-600">{syncProgress.currentStep}</div>
+                <div className="text-xs text-gray-500">Current Step</div>
+              </div>
             </div>
           </div>
-          <button
-            onClick={clearLogs}
-            className="text-gray-500 hover:text-gray-700 text-sm"
-          >
-            Clear Logs
-          </button>
         </div>
+      )}
 
-        <div className="bg-gray-50 rounded-lg p-4 h-64 overflow-y-auto">
-          {syncProgress.logs.length > 0 ? (
-            <div className="space-y-1">
-              {syncProgress.logs.map((log, index) => (
-                <div key={index} className="text-sm font-mono text-gray-700">
-                  {log}
-                </div>
-              ))}
-            </div>
+      {/* Sync Logs */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Sync Logs</h3>
+        
+        <div className="bg-gray-50 rounded border p-4 h-64 overflow-y-auto font-mono text-sm">
+          {syncProgress.logs.length === 0 ? (
+            <p className="text-gray-500">No logs yet. Start a sync to see progress.</p>
           ) : (
-            <div className="text-center py-8">
-              <Info className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-gray-600">No logs yet</p>
-            </div>
+            syncProgress.logs.map((log, index) => (
+              <div key={index} className="text-gray-700 mb-1">
+                {log}
+              </div>
+            ))
           )}
         </div>
       </div>
 
       {/* Information Panel */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-        <div className="flex items-start space-x-3">
-          <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start">
+          <Info className="w-5 h-5 text-blue-400 mr-2 mt-0.5" />
           <div>
-            <h4 className="text-blue-900 font-medium mb-2">About Initial Sync</h4>
-            <div className="text-blue-800 text-sm space-y-2">
-              <p>• <strong>Initial Sync</strong> is a one-time process to populate your database with existing orders</p>
-              <p>• <strong>Maintenance Sync</strong> runs automatically in the background to keep data up-to-date</p>
-              <p>• <strong>Recommended Strategy</strong>: Start with "Known Orders First" for Ongoing WMS</p>
-              <p>• <strong>Time Estimate</strong>: 2-5 minutes depending on data volume</p>
-              <p>• <strong>Safe to Run</strong>: Can be stopped and restarted at any time</p>
-            </div>
+            <h4 className="text-blue-900 font-medium">Initial Sync Information</h4>
+            <p className="text-blue-800 text-sm mt-1">
+              Initial sync is used to populate your database with existing orders and products from 
+              your integrated systems. This should only be run once when setting up the system or 
+              when you need to backfill missing data. Regular updates are handled automatically.
+            </p>
           </div>
         </div>
       </div>
