@@ -832,6 +832,46 @@ const InitialSyncTab: React.FC = () => {
             <RefreshCw className="w-4 h-4" />
             <span>Sync ALL Ongoing WMS Order Lines</span>
           </button>
+
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Checking actual order line data structure...');
+              try {
+                const { collection, getDocs } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const db = getFirestore();
+                
+                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
+                addLog(`Found ${orderLinesSnapshot.size} order lines in database`);
+                
+                if (orderLinesSnapshot.size > 0) {
+                  // Show first 3 order lines with full data structure
+                  orderLinesSnapshot.docs.slice(0, 3).forEach((lineDoc, index) => {
+                    const lineData = lineDoc.data();
+                    addLog(`Order line ${index + 1} (${lineDoc.id}):`);
+                    addLog(`  orderId: "${lineData.orderId}"`);
+                    addLog(`  orderNumber: "${lineData.orderNumber}"`);
+                    addLog(`  productName: "${lineData.productName || lineData.articleName || 'MISSING'}"`);
+                    addLog(`  sku: "${lineData.sku || lineData.articleNumber || 'MISSING'}"`);
+                    addLog(`  quantity: ${lineData.quantity || lineData.orderedQuantity || 'MISSING'}`);
+                    addLog(`  unitPrice: ${lineData.unitPrice || lineData.linePrice || 'MISSING'}`);
+                    addLog(`  totalPrice: ${lineData.totalPrice || lineData.linePrice || 'MISSING'}`);
+                    addLog(`  Full data:`, lineData);
+                  });
+                }
+              } catch (err: any) {
+                addLog(`Check order line structure error: ${err.message}`);
+              }
+            }}
+            className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Search className="w-4 h-4" />
+            <span>Check Order Line Structure</span>
+          </button>
               <button
                 onClick={testSyncKnownOrders}
                 className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"
