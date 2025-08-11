@@ -1895,17 +1895,25 @@ exports.syncOngoingOrderLinesByOrderId = functions.https.onCall(async (data, con
           orderNumber: orderNumber, // Keep the order number for reference
           ongoingLineItemId: line.id,
           rowNumber: line.rowNumber,
-          articleNumber: line.articleNumber,
-          articleName: line.articleName,
-          orderedQuantity: line.orderedQuantity,
-          deliveredQuantity: line.deliveredQuantity || 0,
-          linePrice: line.linePrice,
-          unitPrice: line.unitPrice,
+          // Map article information correctly
+          articleNumber: line.article?.articleNumber || line.articleNumber,
+          articleName: line.article?.articleName || line.articleName,
+          // Map quantity information correctly
+          orderedQuantity: line.orderedNumberOfItems || line.orderedQuantity,
+          deliveredQuantity: line.deliveredNumberOfItems || line.deliveredQuantity || 0,
+          // Map price information correctly
+          linePrice: line.prices?.linePrice || line.linePrice,
+          unitPrice: line.prices?.unitPrice || line.unitPrice,
+          customerLinePrice: line.prices?.customerLinePrice,
+          // Map additional information
           taxAmount: line.taxAmount || 0,
           metaData: line.metaData || {},
           deliveryDate: line.deliveryDate,
           deliveryStatus: line.deliveryStatus || 'pending',
           partialDeliveryDetails: line.partialDeliveryDetails || {},
+          // Map product information
+          productId: line.article?.articleId,
+          productCode: line.article?.productCode,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };

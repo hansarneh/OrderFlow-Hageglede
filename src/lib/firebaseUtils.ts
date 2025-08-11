@@ -501,8 +501,8 @@ export const getOngoingOrderLines = async (orderId: string): Promise<OngoingOrde
         productName: data.articleName || data.productName, // Handle both field names
         sku: data.articleNumber || data.sku, // Handle both field names
         quantity: data.orderedQuantity || data.quantity, // Handle both field names
-        unitPrice: data.linePrice || data.unitPrice, // Handle both field names
-        totalPrice: data.linePrice || data.totalPrice, // Handle both field names
+        unitPrice: data.unitPrice || data.linePrice, // Handle both field names
+        totalPrice: data.linePrice || data.customerLinePrice || data.totalPrice, // Handle both field names
         taxAmount: data.taxAmount || 0,
         metaData: data.metaData || {},
         deliveredQuantity: data.deliveredQuantity || 0,
