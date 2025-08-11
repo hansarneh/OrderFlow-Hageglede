@@ -394,6 +394,7 @@ const InitialSyncTab: React.FC = () => {
       orderLinesSnapshot.forEach((doc) => {
         const data = doc.data();
         addLog(`Order line ${doc.id}: orderId="${data.orderId}", articleName="${data.articleName || 'N/A'}"`);
+        addLog(`  Full data: ${JSON.stringify(data, null, 2)}`);
       });
       
     } catch (err: any) {
