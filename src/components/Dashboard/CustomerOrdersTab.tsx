@@ -1022,7 +1022,24 @@ const CustomerOrdersTab: React.FC = () => {
                           <div className="flex items-center space-x-1 text-sm text-gray-700">
                             <Calendar className="w-4 h-4 text-gray-400" />
                             <div>
-                              <div className="text-gray-900">{new Date(order.dateCreated).toLocaleDateString()}</div>
+                              <div className="text-gray-900">
+                                {(() => {
+                                  try {
+                                    // Handle Firestore timestamp objects
+                                    if (order.dateCreated && typeof order.dateCreated === 'object' && 'toDate' in order.dateCreated) {
+                                      return (order.dateCreated as any).toDate().toLocaleDateString('no-NO');
+                                    }
+                                    // Handle string dates
+                                    if (order.dateCreated && typeof order.dateCreated === 'string') {
+                                      return new Date(order.dateCreated).toLocaleDateString('no-NO');
+                                    }
+                                    // Handle missing dates
+                                    return 'Not set';
+                                  } catch (error) {
+                                    return 'Invalid date';
+                                  }
+                                })()}
+                              </div>
                             </div>
                           </div>
                         </td>
