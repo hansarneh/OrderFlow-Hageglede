@@ -197,7 +197,7 @@ const DebugTab: React.FC = () => {
               const data = result.data as any;
               if (data.success) {
                 addLog('Order 214600 data structure:');
-                addLog(`  Results:`, data.results);
+                addLog(`  Results:`, JSON.stringify(data.results, null, 2));
                 
                 // Find the order with ID 214600
                 const order214600 = data.results.find((r: any) => r.orderId === 214600);
@@ -215,7 +215,10 @@ const DebugTab: React.FC = () => {
                     addLog(`    - createdDate: ${orderInfo.createdDate}`);
                     addLog(`    - orderDate: ${orderInfo.orderDate}`);
                     addLog(`    - deliveryDate: ${orderInfo.deliveryDate}`);
-                    addLog(`    - Full orderInfo:`, orderInfo);
+                    addLog(`    - Full orderInfo:`, JSON.stringify(orderInfo, null, 2));
+                  } else {
+                    addLog(`  ❌ No orderInfo found in fullOrderData`);
+                    addLog(`  Full order data:`, JSON.stringify(order214600.fullOrderData, null, 2));
                   }
                 } else {
                   addLog(`  ❌ Order 214600 not found or has error:`, order214600);
