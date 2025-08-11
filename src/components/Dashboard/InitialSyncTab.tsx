@@ -595,7 +595,20 @@ const InitialSyncTab: React.FC = () => {
                       updatedCount++;
                     }
                   } else {
-                    addLog(`Could not find order number for line ${lineDoc.id} with orderId "${currentOrderId}"`);
+                    // Try to find the order by the current orderId and add the orderNumber to the line
+                    const orderDoc = ordersSnapshot.docs.find(doc => doc.id === currentOrderId);
+                    if (orderDoc) {
+                      const orderData = orderDoc.data();
+                      const orderNumber = orderData.orderNumber;
+                      
+                      updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
+                        orderNumber: orderNumber
+                      });
+                      addLog(`Added orderNumber "${orderNumber}" to order line ${lineDoc.id} (orderId: "${currentOrderId}")`);
+                      updatedCount++;
+                    } else {
+                      addLog(`Could not find order for line ${lineDoc.id} with orderId "${currentOrderId}"`);
+                    }
                   }
                 });
                 
