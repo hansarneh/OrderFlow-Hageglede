@@ -1673,7 +1673,7 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
 
     console.log('User authenticated:', context.auth.uid);
 
-    const { status = 200 } = data;
+    const { status = 320 } = data;  // Changed from 200 to 320
     console.log('Requested status:', status);
 
     const { authHeader, baseUrl } = await getOngoingWMSCredentials();

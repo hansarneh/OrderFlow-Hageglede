@@ -306,7 +306,7 @@ const InitialSyncTab: React.FC = () => {
     try {
       const testSync = httpsCallable(functions, 'testSyncKnownOrders');
       const result = await testSync({
-        status: 200
+        status: 320  // Changed from 200 to 320 since order 214600 now has status 320
       });
 
       const data = result.data as any;
