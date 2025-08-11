@@ -414,8 +414,8 @@ export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<On
     console.log('getOngoingOrders called with statusFilter:', statusFilter);
     
     let q = query(
-      collection(db, 'ongoingOrders'),
-      orderBy('dateCreated', 'desc')
+      collection(db, 'ongoingOrders')
+      // Removed orderBy('dateCreated', 'desc') as it might be causing issues
     );
     
     if (statusFilter !== 'all') {
@@ -423,8 +423,20 @@ export const getOngoingOrders = async (statusFilter: string = 'all'): Promise<On
       q = query(q, where('orderStatus.number', '==', parseInt(statusFilter)));
     }
     
+    console.log('Executing query...');
     const snapshot = await getDocs(q);
     console.log('Found', snapshot.size, 'ongoing orders in Firestore');
+    
+    if (snapshot.size === 0) {
+      console.log('No orders found - checking first document structure...');
+      // Let's check what the first document looks like
+      const testQuery = query(collection(db, 'ongoingOrders'), limit(1));
+      const testSnapshot = await getDocs(testQuery);
+      if (!testSnapshot.empty) {
+        const testDoc = testSnapshot.docs[0];
+        console.log('Sample document structure:', testDoc.data());
+      }
+    }
     
     const orders = snapshot.docs.map(doc => {
       const data = doc.data();
