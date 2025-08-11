@@ -713,6 +713,58 @@ const InitialSyncTab: React.FC = () => {
             <Search className="w-4 h-4" />
             <span>Check ALL Order Lines</span>
           </button>
+
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Checking both orderLines and ongoingOrderLines collections...');
+              try {
+                const { collection, getDocs } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const db = getFirestore();
+                
+                // Check WooCommerce orderLines
+                const wooOrderLinesSnapshot = await getDocs(collection(db, 'orderLines'));
+                addLog(`Found ${wooOrderLinesSnapshot.size} WooCommerce order lines in 'orderLines' collection`);
+                
+                if (wooOrderLinesSnapshot.size > 0) {
+                  addLog('Sample WooCommerce order lines:');
+                  wooOrderLinesSnapshot.docs.slice(0, 3).forEach((lineDoc) => {
+                    const lineData = lineDoc.data();
+                    addLog(`  WooCommerce: ${lineDoc.id}: orderId="${lineData.orderId}"`);
+                  });
+                }
+                
+                // Check Ongoing WMS orderLines
+                const ongoingOrderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
+                addLog(`Found ${ongoingOrderLinesSnapshot.size} Ongoing WMS order lines in 'ongoingOrderLines' collection`);
+                
+                if (ongoingOrderLinesSnapshot.size > 0) {
+                  addLog('Sample Ongoing WMS order lines:');
+                  ongoingOrderLinesSnapshot.docs.slice(0, 3).forEach((lineDoc) => {
+                    const lineData = lineDoc.data();
+                    addLog(`  Ongoing WMS: ${lineDoc.id}: orderId="${lineData.orderId}", orderNumber="${lineData.orderNumber || 'MISSING'}"`);
+                  });
+                }
+                
+                // Check orders collections
+                const wooOrdersSnapshot = await getDocs(collection(db, 'customerOrders'));
+                const ongoingOrdersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+                addLog(`Found ${wooOrdersSnapshot.size} WooCommerce orders in 'customerOrders' collection`);
+                addLog(`Found ${ongoingOrdersSnapshot.size} Ongoing WMS orders in 'ongoingOrders' collection`);
+                
+              } catch (err: any) {
+                addLog(`Check both collections error: ${err.message}`);
+              }
+            }}
+            className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Database className="w-4 h-4" />
+            <span>Check Both Collections</span>
+          </button>
               <button
                 onClick={testSyncKnownOrders}
                 className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"
