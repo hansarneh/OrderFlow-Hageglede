@@ -509,7 +509,7 @@ const InitialSyncTab: React.FC = () => {
                 const { getFirestore } = await import('firebase/firestore');
                 const db = getFirestore();
                 const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
-                const orderNumberMap = new Map<string, string>();
+                const orderNumberMap: Map<string, string> = new Map();
                 const duplicatesToDelete: string[] = [];
                 ordersSnapshot.forEach((docSnapshot) => {
                   const data = docSnapshot.data();
@@ -517,10 +517,12 @@ const InitialSyncTab: React.FC = () => {
                   if (orderNumberMap.has(orderNumber)) {
                     const existingDocId = orderNumberMap.get(orderNumber);
                     const currentDocId = docSnapshot.id;
-                    if (existingDocId === orderNumber.toString()) {
+                    if (existingDocId && existingDocId === orderNumber.toString()) {
                       duplicatesToDelete.push(currentDocId);
                     } else if (currentDocId === orderNumber.toString()) {
-                      duplicatesToDelete.push(existingDocId);
+                      if (existingDocId) {
+                        duplicatesToDelete.push(existingDocId);
+                      }
                       orderNumberMap.set(orderNumber, currentDocId);
                     } else {
                       duplicatesToDelete.push(currentDocId);
