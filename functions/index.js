@@ -945,6 +945,30 @@ function transformOngoingOrderToFirestore(ongoingOrder) {
   const consignee = ongoingOrder.consignee;
   const orderLines = ongoingOrder.orderLines || [];
 
+  // Calculate total value from order lines
+  const totalValue = orderLines.reduce((sum, line) => {
+    // Use customerLinePrice if available, otherwise fall back to linePrice
+    const lineValue = line.prices?.customerLinePrice || line.prices?.linePrice || 0;
+    return sum + (parseFloat(lineValue) || 0);
+  }, 0);
+
+  // Parse created date properly
+  let createdDate = null;
+  if (orderInfo.createdDate) {
+    try {
+      // Handle both ISO string and timestamp formats
+      if (typeof orderInfo.createdDate === 'string') {
+        createdDate = new Date(orderInfo.createdDate);
+      } else if (orderInfo.createdDate && typeof orderInfo.createdDate === 'object') {
+        // If it's already a Date object or Firestore timestamp
+        createdDate = orderInfo.createdDate;
+      }
+    } catch (error) {
+      console.warn('Error parsing createdDate:', error);
+      createdDate = null;
+    }
+  }
+
   return {
     // Order identification
     ongoingOrderId: orderInfo.orderId,
@@ -954,7 +978,7 @@ function transformOngoingOrderToFirestore(ongoingOrder) {
     // Order status and dates
     orderStatus: orderInfo.orderStatus,
     deliveryDate: orderInfo.deliveryDate,
-    createdDate: orderInfo.createdDate,
+    createdDate: createdDate,
     shippedTime: orderInfo.shippedTime,
     
     // Customer information
@@ -972,7 +996,7 @@ function transformOngoingOrderToFirestore(ongoingOrder) {
     },
     
     // Order details
-    totalValue: orderInfo.customerPrice || 0,
+    totalValue: totalValue,
     totalItems: orderInfo.orderedNumberOfItems || 0,
     allocatedItems: orderInfo.allocatedNumberOfItems || 0,
     pickedItems: orderInfo.pickedNumberOfItems || 0,
