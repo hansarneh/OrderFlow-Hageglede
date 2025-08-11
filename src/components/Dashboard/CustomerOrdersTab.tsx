@@ -590,7 +590,27 @@ const CustomerOrdersTab: React.FC = () => {
     // If order lines are not loaded yet, load them
     if (!order.orderLines || order.orderLines.length === 0) {
       const source = 'wooStatus' in order ? 'woocommerce' : 'ongoing_wms';
+      
+      // Debug logging for Ongoing WMS orders
+      if (source === 'ongoing_wms') {
+        console.log('Loading order lines for Ongoing WMS order:', {
+          orderId: order.id,
+          orderNumber: (order as OngoingOrder).orderNumber,
+          source: source
+        });
+      }
+      
       const orderLines = await loadOrderLines(order.id, source);
+      
+      // Debug logging for Ongoing WMS orders
+      if (source === 'ongoing_wms') {
+        console.log('Loaded order lines result:', {
+          orderId: order.id,
+          orderNumber: (order as OngoingOrder).orderNumber,
+          orderLinesCount: orderLines.length,
+          orderLines: orderLines
+        });
+      }
       
       // Create a copy of the order with order lines
       const orderWithLines = {
