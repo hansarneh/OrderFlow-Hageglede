@@ -301,12 +301,15 @@ const InitialSyncTab: React.FC = () => {
       return;
     }
 
-    addLog('Testing sync with known orders only...');
+    // Use the first status from sync config, or default to 320
+    const statusToTest = syncConfig.statuses.length > 0 ? syncConfig.statuses[0] : 320;
+    
+    addLog(`Testing sync with known orders only (status: ${statusToTest})...`);
 
     try {
       const testSync = httpsCallable(functions, 'testSyncKnownOrders');
       const result = await testSync({
-        status: 320  // Changed from 200 to 320 since order 214600 now has status 320
+        status: statusToTest
       });
 
       const data = result.data as any;

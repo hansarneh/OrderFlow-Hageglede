@@ -1186,16 +1186,16 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
               
               const firestoreOrder = transformOngoingOrderToFirestore(order);
               
-              // Store order in Firestore
-              await db.collection('ongoingOrders').doc(orderId.toString()).set(firestoreOrder);
+              // Store order in Firestore using order number as document ID to prevent duplicates
+              await db.collection('ongoingOrders').doc(order.orderInfo.orderNumber.toString()).set(firestoreOrder, { merge: true });
               
               // Store order lines separately in ongoingOrderLines collection
               if (order.orderLines && order.orderLines.length > 0) {
                 for (const line of order.orderLines) {
-                  const lineRef = db.collection('ongoingOrderLines').doc(`${orderId}_${line.id}`);
+                  const lineRef = db.collection('ongoingOrderLines').doc(`${order.orderInfo.orderNumber}_${line.id}`);
                   
                   const lineData = {
-                    orderId: orderId.toString(),
+                    orderId: order.orderInfo.orderNumber.toString(),
                     ongoingLineItemId: line.id,
                     rowNumber: line.rowNumber,
                     articleNumber: line.article?.articleNumber,
