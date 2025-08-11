@@ -53,7 +53,7 @@ const InitialSyncTab: React.FC = () => {
     dateRange: 'last-30-days',
     maxOrders: 50,
     knownOrderIds: ['214600', '216042'],
-    statuses: [200, 210, 300, 320, 400, 450, 451]
+    statuses: [200, 210, 300, 320, 400, 450, 451]  // Multiple statuses to catch orders in different states
   });
 
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({
@@ -163,7 +163,7 @@ const InitialSyncTab: React.FC = () => {
         const syncOrders = httpsCallable(functions, 'syncOngoingOrdersByStatus');
         const result = await syncOrders({
           status,
-          limit: syncConfig.maxOrders,
+          limit: Math.min(syncConfig.maxOrders, 10),  // Limit to 10 per status to avoid timeouts
           goodsOwnerId: 85
         });
 

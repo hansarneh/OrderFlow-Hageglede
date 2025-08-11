@@ -5,6 +5,29 @@ admin.initializeApp();
 const db = admin.firestore();
 const fetch = require("node-fetch");
 
+// Helper function to remove undefined values from objects
+function removeUndefinedValues(obj) {
+  if (obj === null || obj === undefined) {
+    return null;
+  }
+  
+  if (typeof obj === 'object' && !Array.isArray(obj)) {
+    const cleaned = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = removeUndefinedValues(value);
+      }
+    }
+    return cleaned;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefinedValues(item));
+  }
+  
+  return obj;
+}
+
 // Function to delete a user (for admin use)
 exports.deleteUser = functions.https.onCall(async (data, context) => {
   // Check if the caller is authenticated
@@ -972,22 +995,27 @@ function transformOngoingOrderToFirestore(ongoingOrder) {
     telephoneNotification: orderInfo.telephoneNotification,
     
     // Order lines
-    orderLines: orderLines.map(line => ({
-      id: line.id,
-      rowNumber: line.rowNumber,
-      articleNumber: line.article?.articleNumber,
-      articleName: line.article?.articleName,
-      productCode: line.article?.productCode,
-      orderedQuantity: line.orderedNumberOfItems,
-      allocatedQuantity: line.allocatedNumberOfItems,
-      pickedQuantity: line.pickedNumberOfItems,
-      packedQuantity: line.packedNumberOfItems,
-      linePrice: line.prices?.linePrice,
-      customerLinePrice: line.prices?.customerLinePrice,
-      currencyCode: line.prices?.currencyCode,
-      deliveryDate: line.deliveryDate,
-      comment: line.comment
-    })),
+    orderLines: orderLines.map(line => {
+      const lineData = {
+        id: line.id,
+        rowNumber: line.rowNumber,
+        articleNumber: line.article?.articleNumber,
+        articleName: line.article?.articleName,
+        productCode: line.article?.productCode,
+        orderedQuantity: line.orderedNumberOfItems,
+        allocatedQuantity: line.allocatedNumberOfItems,
+        pickedQuantity: line.pickedNumberOfItems,
+        packedQuantity: line.packedNumberOfItems,
+        linePrice: line.prices?.linePrice,
+        customerLinePrice: line.prices?.customerLinePrice,
+        currencyCode: line.prices?.currencyCode,
+        deliveryDate: line.deliveryDate,
+        comment: line.comment
+      };
+      
+      // Clean undefined values
+      return removeUndefinedValues(lineData);
+    }),
     
     // Metadata
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1166,7 +1194,7 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
                 for (const line of order.orderLines) {
                   const lineRef = db.collection('ongoingOrderLines').doc(`${orderId}_${line.id}`);
                   
-                  await lineRef.set({
+                  const lineData = {
                     orderId: orderId.toString(),
                     ongoingLineItemId: line.id,
                     rowNumber: line.rowNumber,
@@ -1187,7 +1215,12 @@ exports.syncOngoingOrdersByStatus = functions.https.onCall(async (data, context)
                     deliveredQuantity: 0, // Default value
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                  });
+                  };
+                  
+                  // Clean undefined values before saving
+                  const cleanedLineData = removeUndefinedValues(lineData);
+                  
+                  await lineRef.set(cleanedLineData);
                 }
               }
               
@@ -1737,7 +1770,7 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
               for (const line of order.orderLines) {
                 const lineRef = db.collection('ongoingOrderLines').doc(`${orderId}_${line.id}`);
                 
-                await lineRef.set({
+                const lineData = {
                   orderId: orderId.toString(),
                   ongoingLineItemId: line.id,
                   rowNumber: line.rowNumber,
@@ -1758,7 +1791,12 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
                   deliveredQuantity: 0, // Default value
                   createdAt: admin.firestore.FieldValue.serverTimestamp(),
                   updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
+                };
+                
+                // Clean undefined values before saving
+                const cleanedLineData = removeUndefinedValues(lineData);
+                
+                await lineRef.set(cleanedLineData);
               }
             }
             
