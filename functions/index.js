@@ -1859,16 +1859,13 @@ exports.syncOngoingOrderLinesByOrderId = functions.https.onCall(async (data, con
     console.log(`Syncing order lines for order ${orderNumber} (Ongoing ID: ${orderId}, Document ID: ${documentId})`);
     
     // Get Ongoing WMS credentials
-    const credentials = await getOngoingWMSCredentials(context.auth.uid);
-    if (!credentials) {
-      throw new functions.https.HttpsError('not-found', 'Ongoing WMS credentials not found for this user');
-    }
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
 
     // Fetch order details from Ongoing WMS
-    const orderResponse = await fetch(`${credentials.baseUrl}/orders/${orderId}`, {
+    const orderResponse = await fetch(`${baseUrl}/orders/${orderId}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`,
+        'Authorization': authHeader,
         'Content-Type': 'application/json'
       }
     });
