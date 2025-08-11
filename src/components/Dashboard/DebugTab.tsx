@@ -41,7 +41,13 @@ const DebugTab: React.FC = () => {
       
       const data = result.data as any;
       if (data.success) {
-        addLog(`✅ Test sync completed: ${data.totalSynced} orders synced, ${data.totalErrors} errors`);
+        addLog(`✅ Test sync completed: ${data.totalSynced} orders synced, ${data.errors?.length || 0} errors`);
+        if (data.errors && data.errors.length > 0) {
+          addLog(`  Errors: ${JSON.stringify(data.errors, null, 2)}`);
+        }
+        if (data.syncedOrders && data.syncedOrders.length > 0) {
+          addLog(`  Synced orders: ${JSON.stringify(data.syncedOrders, null, 2)}`);
+        }
       } else {
         addLog(`❌ Test sync failed: ${data.error}`);
       }
@@ -197,8 +203,20 @@ const DebugTab: React.FC = () => {
               const data = result.data as any;
               if (data.success) {
                 addLog('Order 214600 data structure:');
-                addLog(`  📊 Debug Info:`, JSON.stringify(data.debugInfo, null, 2));
-                addLog(`  📊 Full Order Data:`, JSON.stringify(data.fullOrderData, null, 2));
+                addLog(`  📊 Order ID: ${data.debugInfo.orderId}`);
+                addLog(`  📊 Order Number: ${data.debugInfo.orderNumber}`);
+                addLog(`  📊 Status: ${data.debugInfo.status}`);
+                addLog(`  📊 Customer Price: ${data.debugInfo.customerPrice}`);
+                addLog(`  📊 Total Price: ${data.debugInfo.totalPrice}`);
+                addLog(`  📊 Price: ${data.debugInfo.price}`);
+                addLog(`  📊 Created Date: ${data.debugInfo.createdDate}`);
+                addLog(`  📊 Order Date: ${data.debugInfo.orderDate}`);
+                addLog(`  📊 Delivery Date: ${data.debugInfo.deliveryDate}`);
+                addLog(`  📊 Full Order Info: ${JSON.stringify(data.debugInfo.fullOrderInfo, null, 2)}`);
+                addLog(`  📊 Order Lines Count: ${data.fullOrderData.orderLines?.length || 0}`);
+                if (data.fullOrderData.orderLines && data.fullOrderData.orderLines.length > 0) {
+                  addLog(`  📊 Sample Order Line: ${JSON.stringify(data.fullOrderData.orderLines[0], null, 2)}`);
+                }
               } else {
                 addLog(`❌ Failed to get order data: ${data.error}`);
               }
