@@ -332,6 +332,39 @@ const InitialSyncTab: React.FC = () => {
     }
   };
 
+  const testOrder214600 = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
+
+    addLog('Testing ONLY order 214600...');
+
+    try {
+      const diagnoseOrders = httpsCallable(functions, 'diagnoseOngoingOrders');
+      const result = await diagnoseOrders({
+        orderIds: [214600]
+      });
+
+      const data = result.data as any;
+      if (data.success) {
+        addLog('Order 214600 diagnostic results:');
+        data.results.forEach((order: any) => {
+          if (order.found) {
+            addLog(`Order ${order.orderId}: Status ${order.status.number} (${order.status.text}) - ${order.orderLines} order lines`);
+            addLog(`Raw status data: ${JSON.stringify(order.rawStatus, null, 2)}`);
+          } else {
+            addLog(`Order ${order.orderId}: ${order.error}`);
+          }
+        });
+      } else {
+        addLog('Diagnostic failed');
+      }
+    } catch (err: any) {
+      addLog(`Diagnostic error: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -349,6 +382,13 @@ const InitialSyncTab: React.FC = () => {
               >
                 <Target className="w-4 h-4" />
                 <span>Diagnostic</span>
+              </button>
+              <button
+                onClick={testOrder214600}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors duration-200 flex items-center space-x-2"
+              >
+                <Target className="w-4 h-4" />
+                <span>Test 214600</span>
               </button>
               <button
                 onClick={testSyncKnownOrders}

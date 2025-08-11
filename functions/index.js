@@ -1663,14 +1663,21 @@ exports.diagnoseOngoingOrders = functions.https.onCall(async (data, context) => 
 // Simple test function to sync only known orders
 exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
   try {
+    console.log('=== testSyncKnownOrders function started ===');
+    
     // Check if user is authenticated
     if (!context.auth) {
+      console.log('User not authenticated');
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
+    console.log('User authenticated:', context.auth.uid);
+
     const { status = 200 } = data;
+    console.log('Requested status:', status);
 
     const { authHeader, baseUrl } = await getOngoingWMSCredentials();
+    console.log('Got credentials, baseUrl:', baseUrl);
 
     console.log(`Testing sync for status: ${status}`);
 
@@ -1683,14 +1690,16 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
     console.log(`Testing ${orderIdsToTest.length} known orders for status ${status}`);
 
     for (const orderId of orderIdsToTest) {
-      console.log(`Testing order ${orderId}...`);
+      console.log(`=== Testing order ${orderId} ===`);
       
       try {
         const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
+        console.log(`API URL: ${apiUrl}`);
         
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
         
+        console.log(`Fetching order ${orderId}...`);
         const response = await fetch(apiUrl, {
           method: 'GET',
           headers: {
@@ -1702,13 +1711,19 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
         });
 
         clearTimeout(timeoutId);
+        console.log(`Response status: ${response.status}`);
 
         if (response.ok) {
+          console.log(`Parsing JSON for order ${orderId}...`);
           const order = await response.json();
           
           console.log(`Order ${orderId}: Status ${order.orderInfo?.orderStatus?.number} (${order.orderInfo?.orderStatus?.text})`);
+          console.log(`Order ${orderId}: Raw orderInfo:`, JSON.stringify(order.orderInfo, null, 2));
+          console.log(`Order ${orderId}: Raw orderStatus:`, JSON.stringify(order.orderInfo?.orderStatus, null, 2));
           
           // Check if order matches the requested status
+          console.log(`Order ${orderId}: Comparing ${order.orderInfo?.orderStatus?.number} (type: ${typeof order.orderInfo?.orderStatus?.number}) with ${status} (type: ${typeof status})`);
+          
           if (order.orderInfo?.orderStatus?.number === status) {
             console.log(`Found matching order: ${orderId} (${order.orderInfo.orderNumber})`);
             
