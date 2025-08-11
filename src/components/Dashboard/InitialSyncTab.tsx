@@ -19,7 +19,8 @@ import {
   Settings,
   Info,
   Trash2,
-  Search
+  Search,
+  Wrench
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -546,6 +547,66 @@ const InitialSyncTab: React.FC = () => {
           >
             <Trash2 className="w-4 h-4" />
             <span>Cleanup Duplicates</span>
+          </button>
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Fixing order line references to use correct document IDs...');
+              try {
+                const { collection, getDocs, doc, updateDoc } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const db = getFirestore();
+                
+                // Get all orders to create a mapping from orderNumber to documentId
+                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+                const orderNumberToDocId = new Map<string, string>();
+                
+                ordersSnapshot.forEach((orderDoc) => {
+                  const orderData = orderDoc.data();
+                  const orderNumber = orderData.orderNumber;
+                  const documentId = orderDoc.id;
+                  orderNumberToDocId.set(orderNumber, documentId);
+                  addLog(`Mapping: orderNumber ${orderNumber} → documentId ${documentId}`);
+                });
+                
+                // Get all order lines and fix their orderId
+                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
+                let fixedCount = 0;
+                
+                orderLinesSnapshot.forEach((lineDoc) => {
+                  const lineData = lineDoc.data();
+                  const currentOrderId = lineData.orderId;
+                  const orderNumber = lineData.orderNumber;
+                  
+                  if (orderNumber && orderNumberToDocId.has(orderNumber)) {
+                    const correctOrderId = orderNumberToDocId.get(orderNumber);
+                    
+                    if (correctOrderId && currentOrderId !== correctOrderId) {
+                      updateDoc(doc(db, 'ongoingOrderLines', lineDoc.id), {
+                        orderId: correctOrderId
+                      });
+                      addLog(`Fixed: ${lineDoc.id} orderId "${currentOrderId}" → "${correctOrderId}" (orderNumber: ${orderNumber})`);
+                      fixedCount++;
+                    } else {
+                      addLog(`Already correct: ${lineDoc.id} orderId "${currentOrderId}" (orderNumber: ${orderNumber})`);
+                    }
+                  } else {
+                    addLog(`ERROR: ${lineDoc.id} missing orderNumber or no mapping found`);
+                  }
+                });
+                
+                addLog(`Fixed ${fixedCount} order line references`);
+              } catch (err: any) {
+                addLog(`Fix order line references error: ${err.message}`);
+              }
+            }}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Wrench className="w-4 h-4" />
+            <span>Fix Order Line References</span>
           </button>
           <button
             onClick={async () => {
