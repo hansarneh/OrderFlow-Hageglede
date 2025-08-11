@@ -177,6 +177,42 @@ const DebugTab: React.FC = () => {
           <Database className="w-4 h-4" />
           <span>Check Firestore Data</span>
         </button>
+
+        <button
+          onClick={async () => {
+            if (!user?.id) {
+              setError('User not authenticated');
+              return;
+            }
+            addLog('Checking Ongoing WMS order data structure...');
+            try {
+              const { httpsCallable } = await import('firebase/functions');
+              const { getFunctions } = await import('firebase/functions');
+              const functions = getFunctions();
+              
+              // Test with a known order to see the full data structure
+              const diagnose = httpsCallable(functions, 'diagnoseOngoingOrders');
+              const result = await diagnose({ orderIds: [214600] });
+              
+              const data = result.data as any;
+              if (data.success) {
+                addLog('Order 214600 full data structure:');
+                addLog(`  orderInfo:`, data.orders[0]?.orderInfo);
+                addLog(`  totalValue fields: customerPrice=${data.orders[0]?.orderInfo?.customerPrice}, totalPrice=${data.orders[0]?.orderInfo?.totalPrice}`);
+                addLog(`  date fields: createdDate=${data.orders[0]?.orderInfo?.createdDate}, orderDate=${data.orders[0]?.orderInfo?.orderDate}`);
+                addLog(`  Full orderInfo:`, data.orders[0]?.orderInfo);
+              } else {
+                addLog(`❌ Failed to get order data: ${data.error}`);
+              }
+            } catch (err: any) {
+              addLog(`❌ Check order structure error: ${err.message}`);
+            }
+          }}
+          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors duration-200 flex items-center space-x-2"
+        >
+          <Search className="w-4 h-4" />
+          <span>Check Order Structure</span>
+        </button>
       </div>
 
       {/* Debug Logs */}
