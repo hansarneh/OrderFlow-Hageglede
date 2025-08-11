@@ -365,6 +365,35 @@ const InitialSyncTab: React.FC = () => {
     }
   };
 
+  const checkFirestoreOrders = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
+
+    addLog('Checking what orders are stored in Firestore...');
+
+    try {
+      const { collection, getDocs } = await import('firebase/firestore');
+      const { getFirestore } = await import('firebase/firestore');
+      const db = getFirestore();
+      
+      const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+      const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
+      
+      addLog(`Found ${ordersSnapshot.size} orders in ongoingOrders collection`);
+      addLog(`Found ${orderLinesSnapshot.size} order lines in ongoingOrderLines collection`);
+      
+      ordersSnapshot.forEach((doc) => {
+        const data = doc.data();
+        addLog(`Order ${doc.id}: ${data.orderNumber} - Status: ${data.orderStatus?.text || 'Unknown'}`);
+      });
+      
+    } catch (err: any) {
+      addLog(`Firestore check error: ${err.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -389,6 +418,13 @@ const InitialSyncTab: React.FC = () => {
               >
                 <Target className="w-4 h-4" />
                 <span>Test 214600</span>
+              </button>
+              <button
+                onClick={checkFirestoreOrders}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2"
+              >
+                <Database className="w-4 h-4" />
+                <span>Check DB</span>
               </button>
               <button
                 onClick={testSyncKnownOrders}
