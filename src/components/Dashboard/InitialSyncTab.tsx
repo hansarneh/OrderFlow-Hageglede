@@ -18,7 +18,8 @@ import {
   Zap,
   Settings,
   Info,
-  Trash2
+  Trash2,
+  Search
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -621,6 +622,35 @@ const InitialSyncTab: React.FC = () => {
           >
             <Database className="w-4 h-4" />
             <span>Fix ALL Order Lines</span>
+          </button>
+
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Checking ALL order lines in database...');
+              try {
+                const { collection, getDocs } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const db = getFirestore();
+                
+                const orderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
+                addLog(`Found ${orderLinesSnapshot.size} total order lines in database`);
+                
+                orderLinesSnapshot.forEach((lineDoc) => {
+                  const lineData = lineDoc.data();
+                  addLog(`Order line ${lineDoc.id}: orderId="${lineData.orderId}", orderNumber="${lineData.orderNumber || 'MISSING'}"`);
+                });
+              } catch (err: any) {
+                addLog(`Check ALL order lines error: ${err.message}`);
+              }
+            }}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <Search className="w-4 h-4" />
+            <span>Check ALL Order Lines</span>
           </button>
               <button
                 onClick={testSyncKnownOrders}
