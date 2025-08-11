@@ -384,9 +384,16 @@ const InitialSyncTab: React.FC = () => {
       addLog(`Found ${ordersSnapshot.size} orders in ongoingOrders collection`);
       addLog(`Found ${orderLinesSnapshot.size} order lines in ongoingOrderLines collection`);
       
+      addLog('Sample orders:');
       ordersSnapshot.forEach((doc) => {
         const data = doc.data();
         addLog(`Order ${doc.id}: ${data.orderNumber} - Status: ${data.orderStatus?.text || 'Unknown'}`);
+      });
+      
+      addLog('Sample order lines:');
+      orderLinesSnapshot.forEach((doc) => {
+        const data = doc.data();
+        addLog(`Order line ${doc.id}: orderId="${data.orderId}", articleName="${data.articleName || 'N/A'}"`);
       });
       
     } catch (err: any) {
