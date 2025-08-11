@@ -196,11 +196,30 @@ const DebugTab: React.FC = () => {
               
               const data = result.data as any;
               if (data.success) {
-                addLog('Order 214600 full data structure:');
-                addLog(`  orderInfo:`, data.orders[0]?.orderInfo);
-                addLog(`  totalValue fields: customerPrice=${data.orders[0]?.orderInfo?.customerPrice}, totalPrice=${data.orders[0]?.orderInfo?.totalPrice}`);
-                addLog(`  date fields: createdDate=${data.orders[0]?.orderInfo?.createdDate}, orderDate=${data.orders[0]?.orderInfo?.orderDate}`);
-                addLog(`  Full orderInfo:`, data.orders[0]?.orderInfo);
+                addLog('Order 214600 data structure:');
+                addLog(`  Results:`, data.results);
+                
+                // Find the order with ID 214600
+                const order214600 = data.results.find((r: any) => r.orderId === 214600);
+                if (order214600 && order214600.found) {
+                  addLog(`  ✅ Order 214600 found with status: ${order214600.status?.number} (${order214600.status?.text})`);
+                  addLog(`  Order number: ${order214600.orderNumber}`);
+                  addLog(`  Order lines: ${order214600.orderLines}`);
+                  
+                  // Show the full order data structure
+                  const orderInfo = order214600.fullOrderData?.orderInfo;
+                  if (orderInfo) {
+                    addLog(`  📊 Order Info Structure:`);
+                    addLog(`    - customerPrice: ${orderInfo.customerPrice}`);
+                    addLog(`    - totalPrice: ${orderInfo.totalPrice}`);
+                    addLog(`    - createdDate: ${orderInfo.createdDate}`);
+                    addLog(`    - orderDate: ${orderInfo.orderDate}`);
+                    addLog(`    - deliveryDate: ${orderInfo.deliveryDate}`);
+                    addLog(`    - Full orderInfo:`, orderInfo);
+                  }
+                } else {
+                  addLog(`  ❌ Order 214600 not found or has error:`, order214600);
+                }
               } else {
                 addLog(`❌ Failed to get order data: ${data.error}`);
               }

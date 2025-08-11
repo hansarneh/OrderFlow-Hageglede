@@ -1658,7 +1658,9 @@ exports.diagnoseOngoingOrders = functions.https.onCall(async (data, context) => 
               text: order.orderInfo?.orderStatus?.text
             },
             orderLines: order.orderLines?.length || 0,
-            rawStatus: order.orderInfo?.orderStatus
+            rawStatus: order.orderInfo?.orderStatus,
+            // Add full order data for debugging
+            fullOrderData: order
           });
           
           console.log(`Order ${orderId}: Status ${order.orderInfo?.orderStatus?.number} (${order.orderInfo?.orderStatus?.text})`);
