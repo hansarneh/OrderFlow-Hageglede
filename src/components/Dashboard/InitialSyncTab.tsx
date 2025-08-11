@@ -872,6 +872,86 @@ const InitialSyncTab: React.FC = () => {
             <Search className="w-4 h-4" />
             <span>Check Order Line Structure</span>
           </button>
+
+          <button
+            onClick={async () => {
+              if (!user?.id) {
+                setError('User not authenticated');
+                return;
+              }
+              addLog('Re-syncing order lines with correct data mapping...');
+              try {
+                const { collection, getDocs, doc, deleteDoc } = await import('firebase/firestore');
+                const { getFirestore } = await import('firebase/firestore');
+                const { httpsCallable } = await import('firebase/functions');
+                const { getFunctions } = await import('firebase/functions');
+                const db = getFirestore();
+                const functions = getFunctions();
+                
+                // First, delete all existing order lines
+                addLog('Deleting existing order lines...');
+                const existingOrderLinesSnapshot = await getDocs(collection(db, 'ongoingOrderLines'));
+                let deletedCount = 0;
+                
+                for (const lineDoc of existingOrderLinesSnapshot.docs) {
+                  await deleteDoc(doc(db, 'ongoingOrderLines', lineDoc.id));
+                  deletedCount++;
+                }
+                
+                addLog(`Deleted ${deletedCount} existing order lines`);
+                
+                // Now re-sync all order lines with correct mapping
+                addLog('Re-syncing order lines with correct data mapping...');
+                const ordersSnapshot = await getDocs(collection(db, 'ongoingOrders'));
+                addLog(`Found ${ordersSnapshot.size} Ongoing WMS orders to re-sync`);
+                
+                let syncedCount = 0;
+                let errorCount = 0;
+                
+                // Process each order to sync its order lines
+                for (const orderDoc of ordersSnapshot.docs) {
+                  const orderData = orderDoc.data();
+                  const orderNumber = orderData.orderNumber;
+                  const ongoingOrderId = orderData.ongoingOrderId;
+                  
+                  addLog(`Re-syncing order lines for order ${orderNumber} (Ongoing ID: ${ongoingOrderId})...`);
+                  
+                  try {
+                    // Call the Firebase Function to sync order lines for this specific order
+                    const syncOrderLines = httpsCallable(functions, 'syncOngoingOrderLinesByOrderId');
+                    const result = await syncOrderLines({ 
+                      orderId: ongoingOrderId,
+                      orderNumber: orderNumber,
+                      documentId: orderDoc.id
+                    });
+                    
+                    const data = result.data as any;
+                    if (data.success) {
+                      addLog(`✅ Re-synced ${data.orderLinesCount} order lines for order ${orderNumber}`);
+                      syncedCount += data.orderLinesCount;
+                    } else {
+                      addLog(`❌ Failed to re-sync order lines for order ${orderNumber}: ${data.error}`);
+                      errorCount++;
+                    }
+                  } catch (err: any) {
+                    addLog(`❌ Error re-syncing order lines for order ${orderNumber}: ${err.message}`);
+                    errorCount++;
+                  }
+                  
+                  // Small delay to avoid overwhelming the API
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                addLog(`🎉 Re-sync completed! Synced ${syncedCount} order lines, ${errorCount} errors`);
+              } catch (err: any) {
+                addLog(`Re-sync order lines error: ${err.message}`);
+              }
+            }}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Re-sync Order Lines with Correct Data</span>
+          </button>
               <button
                 onClick={testSyncKnownOrders}
                 className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 transition-colors duration-200 flex items-center space-x-2"
