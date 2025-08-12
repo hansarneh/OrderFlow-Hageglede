@@ -24,8 +24,10 @@ const InitialSyncTab: React.FC = () => {
 
   const [syncConfig, setSyncConfig] = useState({
     source: 'ongoing_wms' as 'ongoing_wms' | 'woocommerce' | 'both',
-    strategy: 'status-based' as 'status-based' | 'date-range',
+    strategy: 'status-based' as 'status-based' | 'date-range' | 'cloud-tasks',
     maxOrders: 10,
+    chunkSize: 50,
+    maxConcurrentChunks: 10,
     dateRange: {
       start: '',
       end: ''
@@ -61,7 +63,11 @@ const InitialSyncTab: React.FC = () => {
       addLog('🚀 Starting initial sync...');
 
       if (syncConfig.source === 'ongoing_wms' || syncConfig.source === 'both') {
-        await syncOngoingWMS();
+        if (syncConfig.strategy === 'cloud-tasks') {
+          await syncCloudTasks();
+        } else {
+          await syncOngoingWMS();
+        }
       }
       
       if (syncConfig.source === 'woocommerce' || syncConfig.source === 'both') {
@@ -159,6 +165,123 @@ const InitialSyncTab: React.FC = () => {
     }
   };
 
+  const syncCloudTasks = async () => {
+    try {
+      if (!syncConfig.dateRange.start || !syncConfig.dateRange.end) {
+        throw new Error('Please select both start and end dates for Cloud Tasks sync');
+      }
+      
+      addLog('🚀 Starting Cloud Tasks sync...');
+      addLog(`📅 Date range: ${syncConfig.dateRange.start} to ${syncConfig.dateRange.end}`);
+      addLog(`📦 Chunk size: ${syncConfig.chunkSize} orders`);
+      addLog(`⚡ Max concurrent chunks: ${syncConfig.maxConcurrentChunks}`);
+      
+      setSyncProgress(prev => ({ 
+        ...prev, 
+        currentStep: 'Initializing Cloud Tasks sync...',
+        progress: 0
+      }));
+
+      const { httpsCallable } = await import('firebase/functions');
+
+      const kickoffSync = httpsCallable(functions, 'kickoffOngoingWMSSync');
+      const result = await kickoffSync({ 
+        startDate: syncConfig.dateRange.start,
+        endDate: syncConfig.dateRange.end,
+        chunkSize: syncConfig.chunkSize,
+        maxConcurrentChunks: syncConfig.maxConcurrentChunks
+      });
+      
+      const data = result.data as any;
+
+      if (data.success) {
+        addLog(`✅ Cloud Tasks sync started successfully!`);
+        addLog(`🆔 Sync Run ID: ${data.syncRunId}`);
+        addLog(`📊 Total chunks: ${data.totalChunks}`);
+        addLog(`📝 ${data.message}`);
+        
+        // Store the sync run ID for monitoring
+        setSyncProgress(prev => ({ 
+          ...prev, 
+          syncRunId: data.syncRunId,
+          currentStep: 'Cloud Tasks sync running in background...',
+          progress: 5
+        }));
+        
+        // Start monitoring the sync progress
+        monitorSyncProgress(data.syncRunId);
+      } else {
+        addLog(`❌ Failed to start Cloud Tasks sync: ${data.error}`);
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      addLog(`❌ Cloud Tasks sync error: ${err.message}`);
+      throw err;
+    }
+  };
+
+  const monitorSyncProgress = async (syncRunId: string) => {
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const getSyncStatus = httpsCallable(functions, 'getSyncRunStatus');
+      
+      const checkProgress = async () => {
+        try {
+          const result = await getSyncStatus({ syncRunId });
+          const data = result.data as any;
+          
+          if (data.success) {
+            const syncRun = data.syncRun;
+            
+            addLog(`📊 Progress: ${syncRun.progress}% (${syncRun.completedChunks}/${syncRun.totalChunks} chunks completed)`);
+            
+            setSyncProgress(prev => ({ 
+              ...prev, 
+              progress: syncRun.progress,
+              syncedOrders: syncRun.completedChunks * syncConfig.chunkSize, // Estimate
+              errors: syncRun.failedChunks,
+              currentStep: `Processing chunks... (${syncRun.remainingChunks} remaining)`
+            }));
+            
+            if (syncRun.status === 'completed' || syncRun.status === 'completed_with_errors') {
+              addLog(`✅ Cloud Tasks sync ${syncRun.status === 'completed' ? 'completed successfully' : 'completed with errors'}`);
+              addLog(`📊 Final stats: ${syncRun.completedChunks} chunks completed, ${syncRun.failedChunks} chunks failed`);
+              
+              if (syncRun.errors && syncRun.errors.length > 0) {
+                addLog(`⚠️ Errors encountered: ${syncRun.errors.length} error(s)`);
+                syncRun.errors.forEach((error: any, index: number) => {
+                  addLog(`  ${index + 1}. Chunk ${error.chunkIndex}: ${error.error}`);
+                });
+              }
+              
+              setSyncProgress(prev => ({ 
+                ...prev, 
+                isRunning: false,
+                currentStep: 'Sync completed'
+              }));
+              return; // Stop monitoring
+            }
+            
+            // Continue monitoring
+            setTimeout(checkProgress, 5000); // Check every 5 seconds
+          } else {
+            addLog(`❌ Failed to get sync status: ${data.error}`);
+            setTimeout(checkProgress, 10000); // Retry in 10 seconds
+          }
+        } catch (error: any) {
+          addLog(`❌ Error monitoring sync progress: ${error.message}`);
+          setTimeout(checkProgress, 10000); // Retry in 10 seconds
+        }
+      };
+      
+      // Start monitoring
+      setTimeout(checkProgress, 2000); // Start monitoring after 2 seconds
+      
+    } catch (err: any) {
+      addLog(`❌ Failed to start progress monitoring: ${err.message}`);
+    }
+  };
+
   const syncWooCommerce = async () => {
     addLog('Starting WooCommerce sync...');
     setSyncProgress(prev => ({ ...prev, currentStep: 'Syncing WooCommerce orders...' }));
@@ -236,6 +359,7 @@ const InitialSyncTab: React.FC = () => {
             >
               <option value="status-based">Status Based</option>
               <option value="date-range">Date Range</option>
+              <option value="cloud-tasks">Cloud Tasks (Production)</option>
             </select>
           </div>
 
@@ -251,6 +375,38 @@ const InitialSyncTab: React.FC = () => {
               max="100"
             />
           </div>
+
+          {/* Chunk Size - Only show for Cloud Tasks */}
+          {syncConfig.strategy === 'cloud-tasks' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Chunk Size (Orders per Task)</label>
+              <input
+                type="number"
+                value={syncConfig.chunkSize}
+                onChange={(e) => setSyncConfig({ ...syncConfig, chunkSize: parseInt(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="10"
+                max="200"
+              />
+              <p className="text-xs text-gray-500 mt-1">Recommended: 50-100 orders per chunk</p>
+            </div>
+          )}
+
+          {/* Max Concurrent Chunks - Only show for Cloud Tasks */}
+          {syncConfig.strategy === 'cloud-tasks' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Max Concurrent Chunks</label>
+              <input
+                type="number"
+                value={syncConfig.maxConcurrentChunks}
+                onChange={(e) => setSyncConfig({ ...syncConfig, maxConcurrentChunks: parseInt(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="1"
+                max="20"
+              />
+              <p className="text-xs text-gray-500 mt-1">Recommended: 5-10 concurrent chunks</p>
+            </div>
+          )}
         </div>
 
         {/* Status Selection - Only show when strategy is status-based */}
@@ -292,8 +448,8 @@ const InitialSyncTab: React.FC = () => {
           </div>
         )}
 
-        {/* Date Range Selection - Only show when strategy is date-range */}
-        {syncConfig.strategy === 'date-range' && (
+        {/* Date Range Selection - Only show when strategy is date-range or cloud-tasks */}
+        {(syncConfig.strategy === 'date-range' || syncConfig.strategy === 'cloud-tasks') && (
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

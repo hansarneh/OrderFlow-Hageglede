@@ -60,6 +60,37 @@ const DebugTab: React.FC = () => {
     }
   };
 
+  const listSyncRuns = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
+    addLog('📋 Listing recent sync runs...');
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+
+      const listRuns = httpsCallable(functions, 'listSyncRuns');
+      const result = await listRuns({});
+      
+      const data = result.data as any;
+
+      if (data.success) {
+        addLog(`✅ Found ${data.syncRuns.length} sync runs`);
+        data.syncRuns.forEach((run: any, index: number) => {
+          addLog(`  ${index + 1}. ${run.id}`);
+          addLog(`     📅 ${run.startDate} to ${run.endDate}`);
+          addLog(`     📊 Progress: ${run.progress}% (${run.completedChunks}/${run.totalChunks})`);
+          addLog(`     🏷️ Status: ${run.status}`);
+          addLog(`     ⏰ Created: ${run.createdAt?.toDate?.() || run.createdAt}`);
+        });
+      } else {
+        addLog(`❌ Failed to list sync runs: ${data.error}`);
+      }
+    } catch (err: any) {
+      addLog(`❌ List sync runs error: ${err.message}`);
+    }
+  };
+
   const testSyncKnownOrders = async () => {
     if (!user?.id) {
       setError('User not authenticated');
@@ -187,6 +218,14 @@ const DebugTab: React.FC = () => {
         >
           <Shield className="w-4 h-4" />
           <span>Test Credentials</span>
+        </button>
+
+        <button
+          onClick={listSyncRuns}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors duration-200 flex items-center space-x-2"
+        >
+          <Database className="w-4 h-4" />
+          <span>List Sync Runs</span>
         </button>
 
         <button

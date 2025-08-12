@@ -5,6 +5,55 @@ admin.initializeApp();
 const db = admin.firestore();
 const fetch = require("node-fetch");
 
+// Cloud Tasks imports
+const {CloudTasksClient} = require('@google-cloud/tasks');
+const tasksClient = new CloudTasksClient();
+
+// Cloud Tasks configuration
+const PROJECT_ID = process.env.GCLOUD_PROJECT || 'order-flow-bolt';
+const LOCATION = 'us-central1';
+const QUEUE_NAME = 'ongoing-wms-sync';
+
+// Helper function to get or create the Cloud Tasks queue
+async function getOrCreateQueue() {
+  const parent = tasksClient.locationPath(PROJECT_ID, LOCATION);
+  const queuePath = tasksClient.queuePath(PROJECT_ID, LOCATION, QUEUE_NAME);
+  
+  try {
+    // Try to get the existing queue
+    await tasksClient.getQueue({ name: queuePath });
+    console.log(`Queue ${QUEUE_NAME} already exists`);
+  } catch (error) {
+    if (error.code === 5) { // NOT_FOUND
+      // Create the queue
+      const queue = {
+        name: queuePath,
+        rateLimits: {
+          maxConcurrentDispatches: 10, // Process 10 tasks concurrently
+          maxDispatchesPerSecond: 5,   // Max 5 tasks per second
+        },
+        retryConfig: {
+          maxAttempts: 5,
+          maxRetryDuration: { seconds: 3600 }, // 1 hour max retry
+          minBackoff: { seconds: 10 },         // Start with 10s backoff
+          maxBackoff: { seconds: 300 },        // Max 5min backoff
+          maxDoublings: 5,                     // Double backoff up to 5 times
+        },
+      };
+      
+      const [createdQueue] = await tasksClient.createQueue({
+        parent,
+        queue: queue,
+      });
+      console.log(`Created queue: ${createdQueue.name}`);
+    } else {
+      throw error;
+    }
+  }
+  
+  return queuePath;
+}
+
 // Helper function to remove undefined values from objects
 function removeUndefinedValues(obj) {
   if (obj === null || obj === undefined) {
@@ -2293,5 +2342,414 @@ exports.testOngoingWMSCredentials = functions.https.onCall(async (data, context)
     }
     
     throw new functions.https.HttpsError('internal', `Error testing credentials: ${error.message}`);
+  }
+});
+
+// Kickoff function for Cloud Tasks pattern - starts the sync process
+exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const { startDate, endDate, chunkSize = 50, maxConcurrentChunks = 10 } = data;
+  
+  if (!startDate || !endDate) {
+    throw new functions.https.HttpsError('invalid-argument', 'startDate and endDate are required');
+  }
+
+  try {
+    console.log(`Kickoff: Starting Ongoing WMS sync from ${startDate} to ${endDate}`);
+    
+    // Get or create the Cloud Tasks queue
+    const queuePath = await getOrCreateQueue();
+    
+    // Create sync run document to track progress
+    const syncRunId = `sync_${Date.now()}`;
+    const syncRunRef = db.collection('syncRuns').doc(syncRunId);
+    
+    const syncRunData = {
+      userId: context.auth.uid,
+      startDate,
+      endDate,
+      chunkSize,
+      maxConcurrentChunks,
+      status: 'initializing',
+      totalChunks: 0,
+      completedChunks: 0,
+      failedChunks: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      errors: []
+    };
+    
+    await syncRunRef.set(syncRunData);
+    
+    // Calculate order ID chunks based on date range
+    // For Ongoing WMS, we'll use a range of order IDs and filter by date
+    const startOrderId = 214600; // Known working order range
+    const endOrderId = 220000;   // Extended range for more orders
+    const totalOrders = endOrderId - startOrderId + 1;
+    const totalChunks = Math.ceil(totalOrders / chunkSize);
+    
+    console.log(`Kickoff: Processing ${totalOrders} orders in ${totalChunks} chunks of ${chunkSize} orders each`);
+    
+    // Update sync run with total chunks
+    await syncRunRef.update({
+      totalChunks,
+      status: 'queuing',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    // Enqueue tasks for each chunk
+    const tasks = [];
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkStartOrderId = startOrderId + (i * chunkSize);
+      const chunkEndOrderId = Math.min(chunkStartOrderId + chunkSize - 1, endOrderId);
+      
+      const task = {
+        httpRequest: {
+          httpMethod: 'POST',
+          url: `https://${LOCATION}-${PROJECT_ID}.cloudfunctions.net/processOngoingWMSChunk`,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: Buffer.from(JSON.stringify({
+            syncRunId,
+            chunkIndex: i,
+            startOrderId: chunkStartOrderId,
+            endOrderId: chunkEndOrderId,
+            startDate,
+            endDate,
+            userId: context.auth.uid
+          })).toString('base64'),
+        },
+        scheduleTime: {
+          seconds: Date.now() / 1000 + (i * 2), // Stagger tasks by 2 seconds
+        },
+      };
+      
+      tasks.push(task);
+    }
+    
+    // Enqueue tasks in batches to avoid rate limits
+    const batchSize = 10;
+    for (let i = 0; i < tasks.length; i += batchSize) {
+      const batch = tasks.slice(i, i + batchSize);
+      const requests = batch.map(task => ({
+        parent: queuePath,
+        task: task,
+      }));
+      
+      await tasksClient.createTask(requests);
+      console.log(`Kickoff: Enqueued batch ${Math.floor(i / batchSize) + 1} (${batch.length} tasks)`);
+    }
+    
+    // Update sync run status
+    await syncRunRef.update({
+      status: 'queued',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`Kickoff: Successfully enqueued ${tasks.length} tasks for sync run ${syncRunId}`);
+    
+    return {
+      success: true,
+      syncRunId,
+      totalChunks,
+      message: `Sync started with ${totalChunks} chunks`
+    };
+    
+  } catch (error) {
+    console.error('Kickoff error:', error);
+    throw new functions.https.HttpsError('internal', `Kickoff failed: ${error.message}`);
+  }
+});
+
+// Worker function - processes individual chunks
+exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
+  // Set CORS headers
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+  
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+  
+  try {
+    const {
+      syncRunId,
+      chunkIndex,
+      startOrderId,
+      endOrderId,
+      startDate,
+      endDate,
+      userId
+    } = req.body;
+    
+    console.log(`Worker: Processing chunk ${chunkIndex} (orders ${startOrderId}-${endOrderId})`);
+    
+    // Get sync run document
+    const syncRunRef = db.collection('syncRuns').doc(syncRunId);
+    const syncRunDoc = await syncRunRef.get();
+    
+    if (!syncRunDoc.exists) {
+      throw new Error(`Sync run ${syncRunId} not found`);
+    }
+    
+    const syncRun = syncRunDoc.data();
+    
+    // Get Ongoing WMS credentials
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(userId);
+    
+    // Initialize BulkWriter for efficient Firestore writes
+    const bulkWriter = db.bulkWriter();
+    
+    const syncedOrders = [];
+    const errors = [];
+    let totalSynced = 0;
+    
+    // Convert dates to ISO strings for filtering
+    const startDateISO = new Date(startDate + 'T00:00:00Z').toISOString();
+    const endDateISO = new Date(endDate + 'T23:59:59Z').toISOString();
+    
+    // Process orders in this chunk
+    for (let orderId = startOrderId; orderId <= endOrderId; orderId++) {
+      try {
+        const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
+        const response = await fetch(apiUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+            'User-Agent': 'LogiFlow/1.0'
+          },
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const order = await response.json();
+          
+          // Check if order was created within the date range
+          const orderCreatedDate = order.orderInfo?.createdDate;
+          if (orderCreatedDate) {
+            const orderDate = new Date(orderCreatedDate);
+            const startDateObj = new Date(startDateISO);
+            const endDateObj = new Date(endDateISO);
+            
+            if (orderDate >= startDateObj && orderDate <= endDateObj) {
+              console.log(`Worker: Order ${orderId} (${order.orderInfo.orderNumber}) within date range`);
+              
+              const firestoreOrder = transformOngoingOrderToFirestore(order);
+              
+              // Use BulkWriter for efficient writes
+              const orderRef = db.collection('ongoingOrders').doc(order.orderInfo.orderNumber.toString());
+              bulkWriter.set(orderRef, firestoreOrder, { merge: true });
+              
+              // Store order lines separately
+              if (order.orderLines && order.orderLines.length > 0) {
+                for (const line of order.orderLines) {
+                  const lineRef = db.collection('ongoingOrderLines').doc(`${order.orderInfo.orderNumber}_${line.id}`);
+                  
+                  const lineData = {
+                    orderId: order.orderInfo.orderNumber.toString(),
+                    ongoingLineItemId: line.id,
+                    rowNumber: line.rowNumber,
+                    articleNumber: line.article?.articleNumber,
+                    articleName: line.article?.articleName,
+                    productCode: line.article?.productCode,
+                    productId: line.article?.articleId,
+                    orderedQuantity: line.orderedNumberOfItems,
+                    allocatedQuantity: line.allocatedNumberOfItems,
+                    pickedQuantity: line.pickedNumberOfItems,
+                    packedQuantity: line.packedNumberOfItems,
+                    linePrice: line.prices?.linePrice,
+                    customerLinePrice: line.prices?.customerLinePrice,
+                    currencyCode: line.prices?.currencyCode,
+                    deliveryDate: line.deliveryDate,
+                    comment: line.comment,
+                    deliveryStatus: 'pending',
+                    deliveredQuantity: 0,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                  };
+                  
+                  const cleanedLineData = removeUndefinedValues(lineData);
+                  bulkWriter.set(lineRef, cleanedLineData);
+                }
+              }
+              
+              syncedOrders.push({
+                orderId,
+                orderNumber: order.orderInfo.orderNumber,
+                createdDate: orderCreatedDate
+              });
+              
+              totalSynced++;
+            }
+          }
+        } else if (response.status === 404) {
+          console.log(`Worker: Order ${orderId} not found`);
+        } else {
+          console.log(`Worker: Order ${orderId} returned status ${response.status}`);
+          errors.push({ orderId, error: `HTTP ${response.status}` });
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.log(`Worker: Timeout fetching order ${orderId}`);
+          errors.push({ orderId, error: 'Request timeout' });
+        } else {
+          console.error(`Worker: Error fetching order ${orderId}:`, error.message);
+          errors.push({ orderId, error: error.message });
+        }
+      }
+    }
+    
+    // Commit all writes using BulkWriter
+    await bulkWriter.close();
+    
+    // Update sync run progress
+    await syncRunRef.update({
+      completedChunks: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log(`Worker: Chunk ${chunkIndex} completed: ${totalSynced} orders synced, ${errors.length} errors`);
+    
+    res.status(200).json({
+      success: true,
+      chunkIndex,
+      totalSynced,
+      errors: errors.length,
+      syncedOrders: syncedOrders.length
+    });
+    
+  } catch (error) {
+    console.error('Worker error:', error);
+    
+    // Update sync run with error
+    if (req.body.syncRunId) {
+      const syncRunRef = db.collection('syncRuns').doc(req.body.syncRunId);
+      await syncRunRef.update({
+        failedChunks: admin.firestore.FieldValue.increment(1),
+        errors: admin.firestore.FieldValue.arrayUnion({
+          chunkIndex: req.body.chunkIndex,
+          error: error.message,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        }),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Function to get sync run status and progress
+exports.getSyncRunStatus = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const { syncRunId } = data;
+  
+  if (!syncRunId) {
+    throw new functions.https.HttpsError('invalid-argument', 'syncRunId is required');
+  }
+
+  try {
+    const syncRunRef = db.collection('syncRuns').doc(syncRunId);
+    const syncRunDoc = await syncRunRef.get();
+    
+    if (!syncRunDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Sync run not found');
+    }
+    
+    const syncRun = syncRunDoc.data();
+    
+    // Calculate progress
+    const totalChunks = syncRun.totalChunks || 0;
+    const completedChunks = syncRun.completedChunks || 0;
+    const failedChunks = syncRun.failedChunks || 0;
+    const progress = totalChunks > 0 ? Math.round((completedChunks / totalChunks) * 100) : 0;
+    
+    // Determine status
+    let status = syncRun.status;
+    if (status === 'queued' && completedChunks + failedChunks >= totalChunks) {
+      status = failedChunks > 0 ? 'completed_with_errors' : 'completed';
+    }
+    
+    return {
+      success: true,
+      syncRun: {
+        ...syncRun,
+        progress,
+        status,
+        totalChunks,
+        completedChunks,
+        failedChunks,
+        remainingChunks: totalChunks - completedChunks - failedChunks
+      }
+    };
+    
+  } catch (error) {
+    console.error('Get sync run status error:', error);
+    throw new functions.https.HttpsError('internal', `Failed to get sync run status: ${error.message}`);
+  }
+});
+
+// Function to list all sync runs for a user
+exports.listSyncRuns = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  try {
+    const syncRunsRef = db.collection('syncRuns')
+      .where('userId', '==', context.auth.uid)
+      .orderBy('createdAt', 'desc')
+      .limit(20);
+    
+    const snapshot = await syncRunsRef.get();
+    
+    const syncRuns = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const totalChunks = data.totalChunks || 0;
+      const completedChunks = data.completedChunks || 0;
+      const failedChunks = data.failedChunks || 0;
+      const progress = totalChunks > 0 ? Math.round((completedChunks / totalChunks) * 100) : 0;
+      
+      syncRuns.push({
+        id: doc.id,
+        ...data,
+        progress,
+        remainingChunks: totalChunks - completedChunks - failedChunks
+      });
+    });
+    
+    return {
+      success: true,
+      syncRuns
+    };
+    
+  } catch (error) {
+    console.error('List sync runs error:', error);
+    throw new functions.https.HttpsError('internal', `Failed to list sync runs: ${error.message}`);
   }
 });
