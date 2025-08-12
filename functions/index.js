@@ -2390,8 +2390,8 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     const endOrderId = 250000;   // Wide range discovery - go much higher
     const totalOrders = endOrderId - startOrderId + 1;
     
-    // Use balanced chunk size - not too large to avoid worker timeouts
-    const optimizedChunkSize = 250; // Balanced size - 200 chunks total, manageable per worker
+    // Use much smaller chunks to avoid worker timeouts
+    const optimizedChunkSize = 50; // Small chunks - 1000 chunks total, but each completes quickly
     const totalChunks = Math.ceil(totalOrders / optimizedChunkSize);
     
     console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${optimizedChunkSize} orders each (discovery mode)`);
@@ -2532,8 +2532,16 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
     const startDateISO = new Date(startDate + 'T00:00:00Z').toISOString();
     const endDateISO = new Date(endDate + 'T23:59:59Z').toISOString();
     
-    // Process orders in this chunk
+    // Process orders in this chunk with timeout protection
+    const startTime = Date.now();
+    const maxProcessingTime = 500000; // 8 minutes max (Cloud Functions timeout is 9 minutes)
+    
     for (let orderId = startOrderId; orderId <= endOrderId; orderId++) {
+      // Check if we're approaching timeout
+      if (Date.now() - startTime > maxProcessingTime) {
+        console.log(`Worker: Chunk ${chunkIndex} approaching timeout, stopping at order ${orderId}`);
+        break;
+      }
       try {
         const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
         
@@ -2655,7 +2663,8 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    console.log(`Worker: Chunk ${chunkIndex} completed: ${totalSynced} orders synced, ${errors.length} errors, ${endOrderId - startOrderId + 1} total orders processed`);
+    const totalProcessed = endOrderId - startOrderId + 1;
+    console.log(`Worker: Chunk ${chunkIndex} completed: ${totalSynced} orders synced, ${errors.length} errors, ${totalProcessed} total orders processed, processing time: ${Date.now() - startTime}ms`);
     
     res.status(200).json({
       success: true,
