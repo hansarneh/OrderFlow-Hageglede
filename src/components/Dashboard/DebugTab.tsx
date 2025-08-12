@@ -229,6 +229,45 @@ const DebugTab: React.FC = () => {
           <Search className="w-4 h-4" />
           <span>Check Order Structure</span>
         </button>
+
+        <button
+          onClick={async () => {
+            if (!user?.id) {
+              setError('User not authenticated');
+              return;
+            }
+            addLog('Checking Firestore order data...');
+            try {
+              const { doc, getDoc } = await import('firebase/firestore');
+              const { getFirestore } = await import('firebase/firestore');
+              const db = getFirestore();
+              
+              // Check the synced order in Firestore
+              const orderDoc = await getDoc(doc(db, 'ongoingOrders', '214600'));
+              if (orderDoc.exists()) {
+                const orderData = orderDoc.data();
+                addLog('Firestore Order 214600:');
+                addLog(`  📊 Total Value: ${orderData.totalValue}`);
+                addLog(`  📊 Created Date: ${orderData.createdDate}`);
+                addLog(`  📊 Order Number: ${orderData.orderNumber}`);
+                addLog(`  📊 Status: ${orderData.orderStatus}`);
+                addLog(`  📊 Order Lines Count: ${orderData.orderLines?.length || 0}`);
+                if (orderData.orderLines && orderData.orderLines.length > 0) {
+                  addLog(`  📊 Order Line 1 - customerLinePrice: ${orderData.orderLines[0].customerLinePrice}`);
+                  addLog(`  📊 Order Line 1 - linePrice: ${orderData.orderLines[0].linePrice}`);
+                }
+              } else {
+                addLog('❌ Order 214600 not found in Firestore');
+              }
+            } catch (err: any) {
+              addLog(`❌ Check Firestore error: ${err.message}`);
+            }
+          }}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200 flex items-center space-x-2"
+        >
+          <Database className="w-4 h-4" />
+          <span>Check Firestore Data</span>
+        </button>
       </div>
 
       {/* Debug Logs */}
