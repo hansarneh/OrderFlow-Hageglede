@@ -1869,6 +1869,180 @@ exports.testSyncKnownOrders = functions.https.onCall(async (data, context) => {
   }
 });
 
+// Function to sync Ongoing WMS orders by date range
+exports.syncOngoingOrdersByDateRange = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const { startDate, endDate, limit = 50 } = data;
+  
+  if (!startDate || !endDate) {
+    throw new functions.https.HttpsError('invalid-argument', 'startDate and endDate are required');
+  }
+
+  try {
+    console.log(`Syncing Ongoing WMS orders from ${startDate} to ${endDate} (limit: ${limit})`);
+    
+    // Get Ongoing WMS credentials
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
+
+    // Set up cancellation check
+    const cancellationRef = db.collection('syncCancellation').doc(context.auth.uid);
+    await cancellationRef.set({ cancelled: false });
+
+    const syncedOrders = [];
+    const errors = [];
+    let totalSynced = 0;
+
+    // Convert dates to ISO strings for API
+    const startDateISO = new Date(startDate + 'T00:00:00Z').toISOString();
+    const endDateISO = new Date(endDate + 'T23:59:59Z').toISOString();
+
+    console.log(`Date range: ${startDateISO} to ${endDateISO}`);
+
+    // For date-based sync, we'll need to iterate through order IDs
+    // Since Ongoing WMS doesn't have a direct date filter, we'll use a range of order IDs
+    // and filter by createdDate in the response
+    const startOrderId = 214000; // Adjust based on your order ID range
+    const endOrderId = 217000;   // Adjust based on your order ID range
+    const batchSize = 5; // Small batches to avoid timeouts
+
+    for (let orderId = startOrderId; orderId <= endOrderId; orderId += batchSize) {
+      // Check for cancellation
+      const cancellationDoc = await cancellationRef.get();
+      if (cancellationDoc.exists && cancellationDoc.data().cancelled) {
+        console.log('Sync cancelled by user');
+        break;
+      }
+
+      const batchEnd = Math.min(orderId + batchSize - 1, endOrderId);
+      console.log(`Processing orders ${orderId} to ${batchEnd}`);
+
+      for (let currentOrderId = orderId; currentOrderId <= batchEnd; currentOrderId++) {
+        try {
+          const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${currentOrderId}`;
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          
+          const response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': authHeader,
+              'Content-Type': 'application/json',
+              'User-Agent': 'LogiFlow/1.0'
+            },
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const order = await response.json();
+            
+            // Check if order was created within the date range
+            const orderCreatedDate = order.orderInfo?.createdDate;
+            if (orderCreatedDate) {
+              const orderDate = new Date(orderCreatedDate);
+              const startDateObj = new Date(startDateISO);
+              const endDateObj = new Date(endDateISO);
+              
+              if (orderDate >= startDateObj && orderDate <= endDateObj) {
+                console.log(`Order ${currentOrderId} (${order.orderInfo.orderNumber}) created on ${orderCreatedDate} - within range`);
+                
+                const firestoreOrder = transformOngoingOrderToFirestore(order);
+                
+                // Store order in Firestore using order number as document ID
+                await db.collection('ongoingOrders').doc(order.orderInfo.orderNumber.toString()).set(firestoreOrder, { merge: true });
+                
+                // Store order lines separately
+                if (order.orderLines && order.orderLines.length > 0) {
+                  for (const line of order.orderLines) {
+                    const lineRef = db.collection('ongoingOrderLines').doc(`${order.orderInfo.orderNumber}_${line.id}`);
+                    
+                    const lineData = {
+                      orderId: order.orderInfo.orderNumber.toString(),
+                      ongoingLineItemId: line.id,
+                      rowNumber: line.rowNumber,
+                      articleNumber: line.article?.articleNumber,
+                      articleName: line.article?.articleName,
+                      productCode: line.article?.productCode,
+                      productId: line.article?.articleId,
+                      orderedQuantity: line.orderedNumberOfItems,
+                      allocatedQuantity: line.allocatedNumberOfItems,
+                      pickedQuantity: line.pickedNumberOfItems,
+                      packedQuantity: line.packedNumberOfItems,
+                      linePrice: line.prices?.linePrice,
+                      customerLinePrice: line.prices?.customerLinePrice,
+                      currencyCode: line.prices?.currencyCode,
+                      deliveryDate: line.deliveryDate,
+                      comment: line.comment,
+                      deliveryStatus: 'pending',
+                      deliveredQuantity: 0,
+                      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    const cleanedLineData = removeUndefinedValues(lineData);
+                    await lineRef.set(cleanedLineData);
+                  }
+                }
+                
+                syncedOrders.push({
+                  orderId: currentOrderId,
+                  orderNumber: order.orderInfo.orderNumber,
+                  createdDate: orderCreatedDate
+                });
+                
+                totalSynced++;
+                
+                if (totalSynced >= limit) {
+                  console.log(`Reached limit of ${limit} orders`);
+                  break;
+                }
+              } else {
+                console.log(`Order ${currentOrderId} created on ${orderCreatedDate} - outside range`);
+              }
+            }
+          } else if (response.status === 404) {
+            console.log(`Order ${currentOrderId} not found`);
+          } else {
+            console.log(`Order ${currentOrderId} returned status ${response.status}`);
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            console.log(`Timeout fetching order ${currentOrderId}`);
+            errors.push({ orderId: currentOrderId, error: 'Request timeout' });
+          } else {
+            console.error(`Error fetching order ${currentOrderId}:`, error.message);
+            errors.push({ orderId: currentOrderId, error: error.message });
+          }
+        }
+      }
+      
+      if (totalSynced >= limit) {
+        break;
+      }
+      
+      // Small delay between batches
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    console.log(`Date range sync completed: ${totalSynced} orders synced, ${errors.length} errors`);
+    return {
+      success: true,
+      totalSynced,
+      errors,
+      syncedOrders
+    };
+
+  } catch (error) {
+    console.error('Error syncing Ongoing WMS orders by date range:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});
+
 // Function to sync order lines for a specific Ongoing WMS order
 exports.syncOngoingOrderLinesByOrderId = functions.https.onCall(async (data, context) => {
   if (!context.auth) {

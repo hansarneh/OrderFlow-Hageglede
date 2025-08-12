@@ -85,22 +85,56 @@ const InitialSyncTab: React.FC = () => {
       let totalSynced = 0;
       let totalErrors = 0;
 
-      for (const status of syncConfig.statuses) {
-        addLog(`Syncing orders with status ${status}...`);
+      if (syncConfig.strategy === 'status-based') {
+        addLog(`Using status-based sync with ${syncConfig.statuses.length} statuses`);
         
-        const syncOrders = httpsCallable(functions, 'syncOngoingOrdersByStatus');
+        for (const status of syncConfig.statuses) {
+          addLog(`Syncing orders with status ${status}...`);
+          
+          const syncOrders = httpsCallable(functions, 'syncOngoingOrdersByStatus');
+          const result = await syncOrders({ 
+            status, 
+            limit: syncConfig.maxOrders 
+          });
+          
+          const data = result.data as any;
+
+          if (data.error) {
+            addLog(`❌ Error syncing status ${status}: ${data.error}`);
+            totalErrors++;
+          } else {
+            addLog(`✅ Synced ${data.totalSynced} orders with status ${status}`);
+            totalSynced += data.totalSynced;
+          }
+
+          setSyncProgress(prev => ({ 
+            ...prev, 
+            syncedOrders: totalSynced,
+            errors: totalErrors,
+            progress: ((syncConfig.statuses.indexOf(status) + 1) / syncConfig.statuses.length) * 100
+          }));
+        }
+      } else if (syncConfig.strategy === 'date-range') {
+        if (!syncConfig.dateRange.start || !syncConfig.dateRange.end) {
+          throw new Error('Please select both start and end dates for date-range sync');
+        }
+        
+        addLog(`Using date-range sync from ${syncConfig.dateRange.start} to ${syncConfig.dateRange.end}`);
+        
+        const syncOrders = httpsCallable(functions, 'syncOngoingOrdersByDateRange');
         const result = await syncOrders({ 
-          status, 
+          startDate: syncConfig.dateRange.start,
+          endDate: syncConfig.dateRange.end,
           limit: syncConfig.maxOrders 
         });
         
         const data = result.data as any;
 
         if (data.error) {
-          addLog(`❌ Error syncing status ${status}: ${data.error}`);
+          addLog(`❌ Error syncing date range: ${data.error}`);
           totalErrors++;
         } else {
-          addLog(`✅ Synced ${data.totalSynced} orders with status ${status}`);
+          addLog(`✅ Synced ${data.totalSynced} orders in date range`);
           totalSynced += data.totalSynced;
         }
 
@@ -108,7 +142,7 @@ const InitialSyncTab: React.FC = () => {
           ...prev, 
           syncedOrders: totalSynced,
           errors: totalErrors,
-          progress: ((syncConfig.statuses.indexOf(status) + 1) / syncConfig.statuses.length) * 100
+          progress: 100
         }));
       }
 
@@ -250,6 +284,42 @@ const InitialSyncTab: React.FC = () => {
               >
                 + Add Status
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Date Range Selection - Only show when strategy is date-range */}
+        {syncConfig.strategy === 'date-range' && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={syncConfig.dateRange.start}
+                  onChange={(e) => setSyncConfig({ 
+                    ...syncConfig, 
+                    dateRange: { ...syncConfig.dateRange, start: e.target.value }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={syncConfig.dateRange.end}
+                  onChange={(e) => setSyncConfig({ 
+                    ...syncConfig, 
+                    dateRange: { ...syncConfig.dateRange, end: e.target.value }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div className="mt-2 text-sm text-gray-500">
+              Select the date range for orders to sync. Orders created within this range will be included.
             </div>
           </div>
         )}
