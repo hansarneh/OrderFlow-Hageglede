@@ -7,14 +7,24 @@ This file tracks all Git commits and Firebase deployments for the LogiFlow proje
 ### ✅ Current Status
 - ✅ **Ongoing WMS Integration**: Complete with proper data mapping
 - ✅ **Date Range Sync**: UI and backend implemented and optimized
-- ✅ **Debug Tools**: Comprehensive debugging functionality
+- ✅ **Debug Tools**: Comprehensive debugging functionality with credentials testing
 - ✅ **Order Management**: Separate collections for WooCommerce vs Ongoing WMS
 - ✅ **Data Mapping**: totalValue and createdDate working correctly
+- ✅ **Error Handling**: Improved timeout and 403 error handling
+- ✅ **Credentials Testing**: Added test function for Ongoing WMS API connectivity
 
 ### 📝 Git Commits
 
 #### 2025-08-12 - Core Integration & Data Mapping
-1. **"Fix totalValue and createdDate mapping in Ongoing WMS order transformation"**
+1. **"Fix Ongoing WMS sync issues: add credentials testing, improve error handling, and move debug functionality to Debug tab"**
+   - Added `testOngoingWMSCredentials` Firebase function for API connectivity testing
+   - Moved test credentials functionality to Debug tab (proper location for debug tools)
+   - Improved error handling with consecutive 403 error detection
+   - Reduced order range and batch size to prevent timeouts
+   - Fixed Firebase Functions region configuration to resolve CORS issues
+   - Updated all function calls to use centralized functions instance
+
+2. **"Fix totalValue and createdDate mapping in Ongoing WMS order transformation"**
    - Fixed `totalValue` calculation from order lines (sum of `customerLinePrice`)
    - Fixed `createdDate` parsing and storage with proper error handling
    - Updated `transformOngoingOrderToFirestore` function
@@ -130,6 +140,7 @@ This file tracks all Git commits and Firebase deployments for the LogiFlow proje
 - **Order 216042**: Order number 2933161, status "Plukk", 2 order lines
 
 ### Debug Tools Available
+- "Test Credentials" - Test Ongoing WMS API connectivity and credentials
 - "Test Sync Known Orders" - Fast sync of known orders
 - "Run Diagnostic" - Check order statuses
 - "Check Order Structure" - Detailed order data analysis
@@ -141,10 +152,12 @@ This file tracks all Git commits and Firebase deployments for the LogiFlow proje
 ## 🔧 Troubleshooting
 
 ### Common Issues
-1. **CORS Errors**: Firebase Functions handle CORS automatically, no manual setup needed
+1. **CORS Errors**: Fixed by setting explicit region in Firebase Functions configuration
 2. **Timeout Errors**: Reduced timeouts and optimized for known orders
-3. **Page Blanking**: Added comprehensive error handling
-4. **Data Mapping**: Verified totalValue calculation from order lines
+3. **403 Errors**: Added detection and stopping after consecutive failures
+4. **Page Blanking**: Added comprehensive error handling
+5. **Data Mapping**: Verified totalValue calculation from order lines
+6. **Credentials Issues**: Added test function to verify API connectivity
 
 ### Performance Tips
 - Use known orders (214600, 216042) for fast testing
