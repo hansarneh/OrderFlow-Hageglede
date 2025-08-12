@@ -4,7 +4,8 @@ import {
   Square, 
   RefreshCw, 
   AlertCircle,
-  Info
+  Info,
+  Stop
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -40,22 +41,24 @@ const InitialSyncTab: React.FC = () => {
   };
 
   const startSync = async () => {
-    if (!user?.id) {
-      setError('User not authenticated');
-      return;
-    }
-
-    setError(null);
-    setSyncProgress({
-      isRunning: true,
-      currentStep: 'Initializing sync...',
-      progress: 0,
-      syncedOrders: 0,
-      errors: 0,
-      logs: []
-    });
-
     try {
+      if (!user?.id) {
+        setError('User not authenticated');
+        return;
+      }
+
+      setError(null);
+      setSyncProgress({
+        isRunning: true,
+        currentStep: 'Initializing sync...',
+        progress: 0,
+        syncedOrders: 0,
+        errors: 0,
+        logs: []
+      });
+
+      addLog('🚀 Starting initial sync...');
+
       if (syncConfig.source === 'ongoing_wms' || syncConfig.source === 'both') {
         await syncOngoingWMS();
       }
@@ -66,18 +69,20 @@ const InitialSyncTab: React.FC = () => {
 
       addLog('🎉 Initial sync completed successfully!');
     } catch (err: any) {
-      addLog(`❌ Sync failed: ${err.message}`);
-      setError(err.message);
+      console.error('Sync error:', err);
+      const errorMessage = err.message || 'Unknown error occurred';
+      addLog(`❌ Sync failed: ${errorMessage}`);
+      setError(errorMessage);
     } finally {
       setSyncProgress(prev => ({ ...prev, isRunning: false }));
     }
   };
 
   const syncOngoingWMS = async () => {
-    addLog('Starting Ongoing WMS sync...');
-    setSyncProgress(prev => ({ ...prev, currentStep: 'Syncing Ongoing WMS orders...' }));
-
     try {
+      addLog('Starting Ongoing WMS sync...');
+      setSyncProgress(prev => ({ ...prev, currentStep: 'Syncing Ongoing WMS orders...' }));
+
       const { httpsCallable } = await import('firebase/functions');
       const { getFunctions } = await import('firebase/functions');
       const functions = getFunctions();
