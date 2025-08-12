@@ -2390,8 +2390,8 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     const endOrderId = 250000;   // Wide range discovery - go much higher
     const totalOrders = endOrderId - startOrderId + 1;
     
-    // Use much larger chunks to dramatically reduce total tasks
-    const optimizedChunkSize = 1000; // Much larger chunks to reduce total tasks from 2500 to 50
+    // Use balanced chunk size - not too large to avoid worker timeouts
+    const optimizedChunkSize = 250; // Balanced size - 200 chunks total, manageable per worker
     const totalChunks = Math.ceil(totalOrders / optimizedChunkSize);
     
     console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${optimizedChunkSize} orders each (discovery mode)`);
@@ -2506,7 +2506,7 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
       discoveryMode = false
     } = req.body;
     
-    console.log(`Worker: Processing chunk ${chunkIndex} (orders ${startOrderId}-${endOrderId})`);
+    console.log(`Worker: Processing chunk ${chunkIndex} (orders ${startOrderId}-${endOrderId}) - discovery mode: ${discoveryMode}`);
     
     // Get sync run document
     const syncRunRef = db.collection('syncRuns').doc(syncRunId);
@@ -2655,7 +2655,7 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    console.log(`Worker: Chunk ${chunkIndex} completed: ${totalSynced} orders synced, ${errors.length} errors`);
+    console.log(`Worker: Chunk ${chunkIndex} completed: ${totalSynced} orders synced, ${errors.length} errors, ${endOrderId - startOrderId + 1} total orders processed`);
     
     res.status(200).json({
       success: true,
