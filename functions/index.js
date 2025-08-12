@@ -2390,8 +2390,8 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     const endOrderId = 250000;   // Wide range discovery - go much higher
     const totalOrders = endOrderId - startOrderId + 1;
     
-    // Use moderate chunk size - we're filtering out fulfilled/cancelled orders
-    const optimizedChunkSize = 100; // Balanced size for filtered orders
+    // Use much larger chunks to dramatically reduce total tasks
+    const optimizedChunkSize = 1000; // Much larger chunks to reduce total tasks from 2500 to 50
     const totalChunks = Math.ceil(totalOrders / optimizedChunkSize);
     
     console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${optimizedChunkSize} orders each (discovery mode)`);
@@ -2405,7 +2405,7 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     });
     
     // Enqueue tasks in smaller batches to avoid timeouts
-    const batchSize = 5; // Reduced batch size for task creation
+    const batchSize = 10; // Increased batch size since we have fewer total tasks
     let tasksCreated = 0;
     
     for (let i = 0; i < totalChunks; i += batchSize) {
@@ -2450,9 +2450,9 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
       
       console.log(`Kickoff: Enqueued batch ${Math.floor(i / batchSize) + 1} (${currentBatch} tasks, total: ${tasksCreated}/${totalChunks})`);
       
-      // Longer delay between batches to avoid rate limits and timeouts
+      // Shorter delay between batches since we have fewer total tasks
       if (i + batchSize < totalChunks) {
-        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
       }
     }
     
