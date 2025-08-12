@@ -26,8 +26,6 @@ const InitialSyncTab: React.FC = () => {
     source: 'ongoing_wms' as 'ongoing_wms' | 'woocommerce' | 'both',
     strategy: 'status-based' as 'status-based' | 'date-range' | 'cloud-tasks',
     maxOrders: 10,
-    chunkSize: 50,
-    maxConcurrentChunks: 10,
     dateRange: {
       start: '',
       end: ''
@@ -173,8 +171,8 @@ const InitialSyncTab: React.FC = () => {
       
       addLog('🚀 Starting Cloud Tasks sync...');
       addLog(`📅 Date range: ${syncConfig.dateRange.start} to ${syncConfig.dateRange.end}`);
-      addLog(`📦 Chunk size: ${syncConfig.chunkSize} orders`);
-      addLog(`⚡ Max concurrent chunks: ${syncConfig.maxConcurrentChunks}`);
+      addLog(`📦 Chunk size: 75 orders (optimized)`);
+      addLog(`⚡ Max concurrent chunks: 8 (optimized)`);
       
       setSyncProgress(prev => ({ 
         ...prev, 
@@ -188,8 +186,8 @@ const InitialSyncTab: React.FC = () => {
       const result = await kickoffSync({ 
         startDate: syncConfig.dateRange.start,
         endDate: syncConfig.dateRange.end,
-        chunkSize: syncConfig.chunkSize,
-        maxConcurrentChunks: syncConfig.maxConcurrentChunks
+        chunkSize: 75, // Optimized chunk size
+        maxConcurrentChunks: 8 // Optimized concurrency
       });
       
       const data = result.data as any;
@@ -238,7 +236,7 @@ const InitialSyncTab: React.FC = () => {
             setSyncProgress(prev => ({ 
               ...prev, 
               progress: syncRun.progress,
-              syncedOrders: syncRun.completedChunks * syncConfig.chunkSize, // Estimate
+              syncedOrders: syncRun.completedChunks * 75, // Estimate based on optimized chunk size
               errors: syncRun.failedChunks,
               currentStep: `Processing chunks... (${syncRun.remainingChunks} remaining)`
             }));
@@ -363,50 +361,22 @@ const InitialSyncTab: React.FC = () => {
             </select>
           </div>
 
-          {/* Max Orders */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Max Orders per Status</label>
-            <input
-              type="number"
-              value={syncConfig.maxOrders}
-              onChange={(e) => setSyncConfig({ ...syncConfig, maxOrders: parseInt(e.target.value) })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              min="1"
-              max="100"
-            />
-          </div>
-
-          {/* Chunk Size - Only show for Cloud Tasks */}
-          {syncConfig.strategy === 'cloud-tasks' && (
+          {/* Max Orders - Only show for non-Cloud Tasks strategies */}
+          {syncConfig.strategy !== 'cloud-tasks' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Chunk Size (Orders per Task)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Max Orders per Status</label>
               <input
                 type="number"
-                value={syncConfig.chunkSize}
-                onChange={(e) => setSyncConfig({ ...syncConfig, chunkSize: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="10"
-                max="200"
-              />
-              <p className="text-xs text-gray-500 mt-1">Recommended: 50-100 orders per chunk</p>
-            </div>
-          )}
-
-          {/* Max Concurrent Chunks - Only show for Cloud Tasks */}
-          {syncConfig.strategy === 'cloud-tasks' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Max Concurrent Chunks</label>
-              <input
-                type="number"
-                value={syncConfig.maxConcurrentChunks}
-                onChange={(e) => setSyncConfig({ ...syncConfig, maxConcurrentChunks: parseInt(e.target.value) })}
+                value={syncConfig.maxOrders}
+                onChange={(e) => setSyncConfig({ ...syncConfig, maxOrders: parseInt(e.target.value) })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 min="1"
-                max="20"
+                max="100"
               />
-              <p className="text-xs text-gray-500 mt-1">Recommended: 5-10 concurrent chunks</p>
             </div>
           )}
+
+
         </div>
 
         {/* Status Selection - Only show when strategy is status-based */}
@@ -444,6 +414,22 @@ const InitialSyncTab: React.FC = () => {
               >
                 + Add Status
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Cloud Tasks Info - Only show when strategy is cloud-tasks */}
+        {syncConfig.strategy === 'cloud-tasks' && (
+          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start">
+              <Info className="w-5 h-5 text-blue-400 mr-2 mt-0.5" />
+              <div>
+                <h4 className="text-blue-900 font-medium">Production-Ready Sync</h4>
+                <p className="text-blue-800 text-sm mt-1">
+                  Cloud Tasks sync uses optimized settings: 75 orders per chunk, 8 concurrent chunks. 
+                  This handles 5k+ orders efficiently without timeouts. Progress is tracked in real-time.
+                </p>
+              </div>
             </div>
           </div>
         )}
