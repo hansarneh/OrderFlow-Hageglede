@@ -5,7 +5,7 @@ import {
   RefreshCw, 
   AlertCircle,
   Info,
-  Stop
+  Pause
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -346,7 +346,7 @@ const InitialSyncTab: React.FC = () => {
             onClick={stopSync}
             className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
           >
-            <Stop className="w-5 h-5" />
+            <Pause className="w-5 h-5" />
             <span>Stop Sync</span>
           </button>
         )}
