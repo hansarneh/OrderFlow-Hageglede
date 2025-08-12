@@ -2389,9 +2389,12 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     const startOrderId = 200000; // Wide range discovery - start from lower number
     const endOrderId = 250000;   // Wide range discovery - go much higher
     const totalOrders = endOrderId - startOrderId + 1;
-    const totalChunks = Math.ceil(totalOrders / chunkSize);
     
-    console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${chunkSize} orders each (discovery mode)`);
+    // Use larger chunks to reduce total number of tasks
+    const optimizedChunkSize = 500; // Increased from 75 to 500
+    const totalChunks = Math.ceil(totalOrders / optimizedChunkSize);
+    
+    console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${optimizedChunkSize} orders each (discovery mode)`);
     
     // Update sync run with total chunks
     await syncRunRef.update({
@@ -2400,55 +2403,55 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    // Enqueue tasks for each chunk
-    const tasks = [];
-    for (let i = 0; i < totalChunks; i++) {
-      const chunkStartOrderId = startOrderId + (i * chunkSize);
-      const chunkEndOrderId = Math.min(chunkStartOrderId + chunkSize - 1, endOrderId);
-      
-      const task = {
-        httpRequest: {
-          httpMethod: 'POST',
-          url: `https://${LOCATION}-${PROJECT_ID}.cloudfunctions.net/processOngoingWMSChunk`,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: Buffer.from(JSON.stringify({
-            syncRunId,
-            chunkIndex: i,
-            startOrderId: chunkStartOrderId,
-            endOrderId: chunkEndOrderId,
-            startDate,
-            endDate,
-            userId: context.auth.uid
-          })).toString('base64'),
-        },
-        scheduleTime: {
-          seconds: Date.now() / 1000 + (i * 2), // Stagger tasks by 2 seconds
-        },
-      };
-      
-      tasks.push(task);
-    }
+    // Enqueue tasks in smaller batches to avoid timeouts
+    const batchSize = 5; // Reduced batch size for task creation
+    let tasksCreated = 0;
     
-    // Enqueue tasks individually to avoid rate limits
-    const batchSize = 10;
-    for (let i = 0; i < tasks.length; i += batchSize) {
-      const batch = tasks.slice(i, i + batchSize);
+    for (let i = 0; i < totalChunks; i += batchSize) {
+      const currentBatch = Math.min(batchSize, totalChunks - i);
       
-      // Create tasks individually
-      for (const task of batch) {
+      // Create tasks for current batch
+      for (let j = 0; j < currentBatch; j++) {
+        const chunkIndex = i + j;
+        const chunkStartOrderId = startOrderId + (chunkIndex * optimizedChunkSize);
+        const chunkEndOrderId = Math.min(chunkStartOrderId + optimizedChunkSize - 1, endOrderId);
+        
+        const task = {
+          httpRequest: {
+            httpMethod: 'POST',
+            url: `https://${LOCATION}-${PROJECT_ID}.cloudfunctions.net/processOngoingWMSChunk`,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: Buffer.from(JSON.stringify({
+              syncRunId,
+              chunkIndex,
+              startOrderId: chunkStartOrderId,
+              endOrderId: chunkEndOrderId,
+              startDate,
+              endDate,
+              userId: context.auth.uid,
+              discoveryMode: true
+            })).toString('base64'),
+          },
+          scheduleTime: {
+            seconds: Date.now() / 1000 + (chunkIndex * 3), // Stagger tasks by 3 seconds
+          },
+        };
+        
         await tasksClient.createTask({
           parent: queuePath,
           task: task,
         });
+        
+        tasksCreated++;
       }
       
-      console.log(`Kickoff: Enqueued batch ${Math.floor(i / batchSize) + 1} (${batch.length} tasks)`);
+      console.log(`Kickoff: Enqueued batch ${Math.floor(i / batchSize) + 1} (${currentBatch} tasks, total: ${tasksCreated}/${totalChunks})`);
       
-      // Small delay between batches to avoid rate limits
-      if (i + batchSize < tasks.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Longer delay between batches to avoid rate limits and timeouts
+      if (i + batchSize < totalChunks) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
       }
     }
     
@@ -2498,7 +2501,8 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
       endOrderId,
       startDate,
       endDate,
-      userId
+      userId,
+      discoveryMode = false
     } = req.body;
     
     console.log(`Worker: Processing chunk ${chunkIndex} (orders ${startOrderId}-${endOrderId})`);
@@ -2609,7 +2613,10 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
             }
           }
         } else if (response.status === 404) {
-          console.log(`Worker: Order ${orderId} not found`);
+          console.log(`Worker: Order ${orderId} not found (discovery mode)`);
+        } else if (response.status === 403) {
+          console.log(`Worker: Order ${orderId} access denied (discovery mode - skipping)`);
+          // Don't count 403 errors in discovery mode - they're expected for non-existent orders
         } else {
           console.log(`Worker: Order ${orderId} returned status ${response.status}`);
           errors.push({ orderId, error: `HTTP ${response.status}` });
