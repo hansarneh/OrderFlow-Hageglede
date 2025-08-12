@@ -2390,11 +2390,12 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     const endOrderId = 250000;   // Wide range discovery - go much higher
     const totalOrders = endOrderId - startOrderId + 1;
     
-    // Use larger chunks to reduce total number of tasks
-    const optimizedChunkSize = 500; // Increased from 75 to 500
+    // Use moderate chunk size - we're filtering out fulfilled/cancelled orders
+    const optimizedChunkSize = 100; // Balanced size for filtered orders
     const totalChunks = Math.ceil(totalOrders / optimizedChunkSize);
     
     console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${optimizedChunkSize} orders each (discovery mode)`);
+    console.log(`Kickoff: Will exclude fulfilled (500) and cancelled (600) orders for better performance`);
     
     // Update sync run with total chunks
     await syncRunRef.update({
@@ -2435,7 +2436,7 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
             })).toString('base64'),
           },
           scheduleTime: {
-            seconds: Date.now() / 1000 + (chunkIndex * 3), // Stagger tasks by 3 seconds
+            seconds: Date.now() / 1000 + (chunkIndex * 5), // Stagger tasks by 5 seconds for better rate limiting
           },
         };
         
@@ -2451,7 +2452,7 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
       
       // Longer delay between batches to avoid rate limits and timeouts
       if (i + batchSize < totalChunks) {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+        await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
       }
     }
     
@@ -2537,7 +2538,12 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
         const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${orderId}`;
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+        
+        // Add rate limiting - small delay between API calls
+        if (orderId > startOrderId) {
+          await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay between calls
+        }
         
         const response = await fetch(apiUrl, {
           method: 'GET',
@@ -2556,13 +2562,21 @@ exports.processOngoingWMSChunk = functions.https.onRequest(async (req, res) => {
           
           // Check if order was created within the date range
           const orderCreatedDate = order.orderInfo?.createdDate;
+          const orderStatus = order.orderInfo?.orderStatus?.number;
+          
+          // Filter out fulfilled and cancelled orders (status 500 and 600)
+          if (orderStatus === 500 || orderStatus === 600) {
+            console.log(`Worker: Order ${orderId} (${order.orderInfo.orderNumber}) excluded - status ${orderStatus} (fulfilled/cancelled)`);
+            continue; // Skip this order
+          }
+          
           if (orderCreatedDate) {
             const orderDate = new Date(orderCreatedDate);
             const startDateObj = new Date(startDateISO);
             const endDateObj = new Date(endDateISO);
             
             if (orderDate >= startDateObj && orderDate <= endDateObj) {
-              console.log(`Worker: Order ${orderId} (${order.orderInfo.orderNumber}) within date range`);
+              console.log(`Worker: Order ${orderId} (${order.orderInfo.orderNumber}) within date range - status ${orderStatus}`);
               
               const firestoreOrder = transformOngoingOrderToFirestore(order);
               
