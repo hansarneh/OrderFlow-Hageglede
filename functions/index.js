@@ -2751,6 +2751,48 @@ exports.getSyncRunStatus = functions.https.onCall(async (data, context) => {
   }
 });
 
+// Function to delete a sync run
+exports.deleteSyncRun = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const { syncRunId } = data;
+  
+  if (!syncRunId) {
+    throw new functions.https.HttpsError('invalid-argument', 'syncRunId is required');
+  }
+
+  try {
+    const syncRunRef = db.collection('syncRuns').doc(syncRunId);
+    const syncRunDoc = await syncRunRef.get();
+    
+    if (!syncRunDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Sync run not found');
+    }
+    
+    // Check if user owns this sync run
+    const syncRun = syncRunDoc.data();
+    if (syncRun.userId !== context.auth.uid) {
+      throw new functions.https.HttpsError('permission-denied', 'You can only delete your own sync runs');
+    }
+    
+    // Delete the sync run
+    await syncRunRef.delete();
+    
+    console.log(`Deleted sync run ${syncRunId} for user ${context.auth.uid}`);
+    
+    return {
+      success: true,
+      message: 'Sync run deleted successfully'
+    };
+    
+  } catch (error) {
+    console.error('Delete sync run error:', error);
+    throw new functions.https.HttpsError('internal', `Failed to delete sync run: ${error.message}`);
+  }
+});
+
 // Function to list all sync runs for a user
 exports.listSyncRuns = functions.https.onCall(async (data, context) => {
   if (!context.auth) {

@@ -19,7 +19,8 @@ const InitialSyncTab: React.FC = () => {
     progress: 0,
     syncedOrders: 0,
     errors: 0,
-    logs: [] as string[]
+    logs: [] as string[],
+    syncRunId: '' as string
   });
 
   const [syncConfig, setSyncConfig] = useState({
@@ -55,7 +56,8 @@ const InitialSyncTab: React.FC = () => {
         progress: 0,
         syncedOrders: 0,
         errors: 0,
-        logs: []
+        logs: [],
+        syncRunId: ''
       });
 
       addLog('🚀 Starting initial sync...');
@@ -303,9 +305,40 @@ const InitialSyncTab: React.FC = () => {
     }
   };
 
-  const stopSync = () => {
-    setSyncProgress(prev => ({ ...prev, isRunning: false }));
-    addLog('⏹️ Sync stopped by user');
+  const stopSync = async () => {
+    try {
+      addLog('🛑 Stopping sync...');
+      
+      // If we have a sync run ID, delete it to stop the sync
+      if (syncProgress.syncRunId) {
+        addLog(`🗑️ Deleting sync run: ${syncProgress.syncRunId}`);
+        
+        // Delete the sync run document to stop progress tracking
+        const { httpsCallable } = await import('firebase/functions');
+        const deleteSyncRun = httpsCallable(functions, 'deleteSyncRun');
+        
+        try {
+          await deleteSyncRun({ syncRunId: syncProgress.syncRunId });
+          addLog('✅ Sync run deleted successfully');
+        } catch (error: any) {
+          addLog(`⚠️ Could not delete sync run: ${error.message}`);
+        }
+      }
+      
+      // Stop progress monitoring and reset state
+      setSyncProgress(prev => ({ 
+        ...prev, 
+        isRunning: false,
+        syncRunId: '',
+        currentStep: 'Sync stopped by user'
+      }));
+      
+      addLog('⏹️ Sync stopped by user');
+      addLog('ℹ️ Note: Cloud Tasks may continue running in background, but progress monitoring has stopped');
+      
+    } catch (error: any) {
+      addLog(`❌ Error stopping sync: ${error.message}`);
+    }
   };
 
   const clearLogs = () => {
@@ -487,7 +520,7 @@ const InitialSyncTab: React.FC = () => {
             onClick={stopSync}
             className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors duration-200 flex items-center space-x-2"
           >
-            <Pause className="w-5 h-5" />
+            <Square className="w-5 h-5" />
             <span>Stop Sync</span>
           </button>
         )}
