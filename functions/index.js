@@ -2385,13 +2385,13 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     await syncRunRef.set(syncRunData);
     
     // Calculate order ID chunks based on date range
-    // For Ongoing WMS, we'll use a range of order IDs and filter by date
-    const startOrderId = 200000; // Wide range discovery - start from lower number
-    const endOrderId = 250000;   // Wide range discovery - go much higher
+    // For Ongoing WMS, we'll use a reasonable range for ~5000 orders
+    const startOrderId = 214000; // Start from known working range
+    const endOrderId = 219000;   // Cover ~5000 orders
     const totalOrders = endOrderId - startOrderId + 1;
     
-    // Use much smaller chunks to avoid worker timeouts
-    const optimizedChunkSize = 50; // Small chunks - 1000 chunks total, but each completes quickly
+    // Use reasonable chunk size for ~5000 orders
+    const optimizedChunkSize = 100; // 100 orders per chunk - 50 chunks total
     const totalChunks = Math.ceil(totalOrders / optimizedChunkSize);
     
     console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${optimizedChunkSize} orders each (discovery mode)`);
@@ -2404,8 +2404,8 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    // Enqueue tasks in smaller batches to avoid timeouts
-    const batchSize = 10; // Increased batch size since we have fewer total tasks
+    // Enqueue tasks in reasonable batches for 50 total tasks
+    const batchSize = 10; // 10 tasks per batch - 5 batches total
     let tasksCreated = 0;
     
     for (let i = 0; i < totalChunks; i += batchSize) {
