@@ -2386,12 +2386,12 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
     
     // Calculate order ID chunks based on date range
     // For Ongoing WMS, we'll use a range of order IDs and filter by date
-    const startOrderId = 214600; // Known working order range
-    const endOrderId = 220000;   // Extended range for more orders
+    const startOrderId = 200000; // Wide range discovery - start from lower number
+    const endOrderId = 250000;   // Wide range discovery - go much higher
     const totalOrders = endOrderId - startOrderId + 1;
     const totalChunks = Math.ceil(totalOrders / chunkSize);
     
-    console.log(`Kickoff: Processing ${totalOrders} orders in ${totalChunks} chunks of ${chunkSize} orders each`);
+    console.log(`Kickoff: Processing potential ${totalOrders} orders in ${totalChunks} chunks of ${chunkSize} orders each (discovery mode)`);
     
     // Update sync run with total chunks
     await syncRunRef.update({
@@ -2431,17 +2431,25 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
       tasks.push(task);
     }
     
-    // Enqueue tasks in batches to avoid rate limits
+    // Enqueue tasks individually to avoid rate limits
     const batchSize = 10;
     for (let i = 0; i < tasks.length; i += batchSize) {
       const batch = tasks.slice(i, i + batchSize);
-      const requests = batch.map(task => ({
-        parent: queuePath,
-        task: task,
-      }));
       
-      await tasksClient.createTask(requests);
+      // Create tasks individually
+      for (const task of batch) {
+        await tasksClient.createTask({
+          parent: queuePath,
+          task: task,
+        });
+      }
+      
       console.log(`Kickoff: Enqueued batch ${Math.floor(i / batchSize) + 1} (${batch.length} tasks)`);
+      
+      // Small delay between batches to avoid rate limits
+      if (i + batchSize < tasks.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
     
     // Update sync run status
@@ -2456,7 +2464,7 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
       success: true,
       syncRunId,
       totalChunks,
-      message: `Sync started with ${totalChunks} chunks`
+      message: `Sync started with ${totalChunks} chunks (discovery mode)`
     };
     
   } catch (error) {
