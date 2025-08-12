@@ -8,6 +8,7 @@ import {
   Pause
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { functions } from '../../lib/firebaseClient';
 
 const InitialSyncTab: React.FC = () => {
   const { user } = useAuth();
@@ -78,14 +79,14 @@ const InitialSyncTab: React.FC = () => {
     }
   };
 
+
+
   const syncOngoingWMS = async () => {
     try {
       addLog('Starting Ongoing WMS sync...');
       setSyncProgress(prev => ({ ...prev, currentStep: 'Syncing Ongoing WMS orders...' }));
 
       const { httpsCallable } = await import('firebase/functions');
-      const { getFunctions } = await import('firebase/functions');
-      const functions = getFunctions();
 
       let totalSynced = 0;
       let totalErrors = 0;
@@ -164,8 +165,6 @@ const InitialSyncTab: React.FC = () => {
 
     try {
       const { httpsCallable } = await import('firebase/functions');
-      const { getFunctions } = await import('firebase/functions');
-      const functions = getFunctions();
 
       const syncWooCommerceOrders = httpsCallable(functions, 'syncWooCommerceOrders');
       const result = await syncWooCommerceOrders();
@@ -350,6 +349,8 @@ const InitialSyncTab: React.FC = () => {
             <span>Stop Sync</span>
           </button>
         )}
+
+
 
         <button
           onClick={clearLogs}

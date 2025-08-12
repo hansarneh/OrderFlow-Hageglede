@@ -7,9 +7,11 @@ import {
   Trash2, 
   Play,
   Info,
-  AlertCircle
+  AlertCircle,
+  Shield
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { functions } from '../../lib/firebaseClient';
 
 const DebugTab: React.FC = () => {
   const { user } = useAuth();
@@ -25,6 +27,39 @@ const DebugTab: React.FC = () => {
     setLogs([]);
   };
 
+  const testCredentials = async () => {
+    if (!user?.id) {
+      setError('User not authenticated');
+      return;
+    }
+    addLog('🔍 Testing Ongoing WMS credentials...');
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+
+      const testCreds = httpsCallable(functions, 'testOngoingWMSCredentials');
+      const result = await testCreds({});
+      
+      const data = result.data as any;
+
+      if (data.success) {
+        addLog(`✅ Credentials test successful: ${data.message}`);
+        addLog(`📋 Order ID: ${data.orderId}, Order Number: ${data.orderNumber}`);
+        addLog(`📊 Status: ${data.status}, Has Data: ${data.hasOrderData}`);
+      } else {
+        addLog(`❌ Credentials test failed: ${data.message}`);
+        addLog(`📊 Status: ${data.status}`);
+        if (data.error) {
+          addLog(`🔍 Error details: ${data.error}`);
+        }
+        if (data.headers) {
+          addLog(`📋 Response headers: ${JSON.stringify(data.headers, null, 2)}`);
+        }
+      }
+    } catch (err: any) {
+      addLog(`❌ Credentials test error: ${err.message}`);
+    }
+  };
+
   const testSyncKnownOrders = async () => {
     if (!user?.id) {
       setError('User not authenticated');
@@ -33,8 +68,6 @@ const DebugTab: React.FC = () => {
     addLog('Testing sync with known orders...');
     try {
       const { httpsCallable } = await import('firebase/functions');
-      const { getFunctions } = await import('firebase/functions');
-      const functions = getFunctions();
       
       const testSync = httpsCallable(functions, 'testSyncKnownOrders');
       const result = await testSync({ status: 450 });
@@ -64,8 +97,6 @@ const DebugTab: React.FC = () => {
     addLog('Running diagnostic on known orders...');
     try {
       const { httpsCallable } = await import('firebase/functions');
-      const { getFunctions } = await import('firebase/functions');
-      const functions = getFunctions();
       
       const diagnose = httpsCallable(functions, 'diagnoseOngoingOrders');
       const result = await diagnose({ orderIds: [214600, 216042] });
@@ -92,8 +123,6 @@ const DebugTab: React.FC = () => {
     addLog('Testing order 214600 specifically...');
     try {
       const { httpsCallable } = await import('firebase/functions');
-      const { getFunctions } = await import('firebase/functions');
-      const functions = getFunctions();
       
       const diagnose = httpsCallable(functions, 'diagnoseOngoingOrders');
       const result = await diagnose({ orderIds: [214600] });
@@ -152,6 +181,14 @@ const DebugTab: React.FC = () => {
 
       {/* Debug Tools */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <button
+          onClick={testCredentials}
+          className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors duration-200 flex items-center space-x-2"
+        >
+          <Shield className="w-4 h-4" />
+          <span>Test Credentials</span>
+        </button>
+
         <button
           onClick={testSyncKnownOrders}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"

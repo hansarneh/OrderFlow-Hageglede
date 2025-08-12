@@ -1894,6 +1894,8 @@ exports.syncOngoingOrdersByDateRange = functions.https.onCall(async (data, conte
     const syncedOrders = [];
     const errors = [];
     let totalSynced = 0;
+    let consecutive403Errors = 0;
+    const maxConsecutive403Errors = 5; // Stop after 5 consecutive 403 errors
 
     // Convert dates to ISO strings for API
     const startDateISO = new Date(startDate + 'T00:00:00Z').toISOString();
@@ -1904,9 +1906,9 @@ exports.syncOngoingOrdersByDateRange = functions.https.onCall(async (data, conte
     // For date-based sync, we'll need to iterate through order IDs
     // Since Ongoing WMS doesn't have a direct date filter, we'll use a range of order IDs
     // and filter by createdDate in the response
-    const startOrderId = 214000; // Adjust based on your order ID range
-    const endOrderId = 217000;   // Adjust based on your order ID range
-    const batchSize = 5; // Small batches to avoid timeouts
+    const startOrderId = 214600; // Focus on known orders
+    const endOrderId = 214610;   // Reduced range to avoid timeouts
+    const batchSize = 1; // Single orders to avoid timeouts
 
     for (let orderId = startOrderId; orderId <= endOrderId; orderId += batchSize) {
       // Check for cancellation
@@ -1924,7 +1926,7 @@ exports.syncOngoingOrdersByDateRange = functions.https.onCall(async (data, conte
           const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${currentOrderId}`;
           
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          const timeoutId = setTimeout(() => controller.abort(), 3000); // Reduced timeout
           
           const response = await fetch(apiUrl, {
             method: 'GET',
@@ -2007,8 +2009,22 @@ exports.syncOngoingOrdersByDateRange = functions.https.onCall(async (data, conte
             }
           } else if (response.status === 404) {
             console.log(`Order ${currentOrderId} not found`);
+            consecutive403Errors = 0; // Reset counter for non-403 errors
+          } else if (response.status === 403) {
+            console.log(`Order ${currentOrderId} returned status 403 (Forbidden)`);
+            consecutive403Errors++;
+            
+            if (consecutive403Errors >= maxConsecutive403Errors) {
+              console.log(`Stopping sync due to ${consecutive403Errors} consecutive 403 errors`);
+              errors.push({ 
+                orderId: currentOrderId, 
+                error: `Stopped due to ${consecutive403Errors} consecutive 403 errors - check API credentials` 
+              });
+              break;
+            }
           } else {
             console.log(`Order ${currentOrderId} returned status ${response.status}`);
+            consecutive403Errors = 0; // Reset counter for non-403 errors
           }
         } catch (error) {
           if (error.name === 'AbortError') {
@@ -2026,7 +2042,7 @@ exports.syncOngoingOrdersByDateRange = functions.https.onCall(async (data, conte
       }
       
       // Small delay between batches
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 200)); // Reduced delay
     }
 
     console.log(`Date range sync completed: ${totalSynced} orders synced, ${errors.length} errors`);
@@ -2203,5 +2219,79 @@ exports.debugOrderData = functions.https.onCall(async (data, context) => {
   } catch (error) {
     console.error(`Error debugging order ${orderId}:`, error);
     throw new functions.https.HttpsError('internal', `Failed to debug order: ${error.message}`);
+  }
+});
+
+// Function to test Ongoing WMS credentials and API connectivity
+exports.testOngoingWMSCredentials = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  try {
+    console.log('Testing Ongoing WMS credentials...');
+    
+    // Get credentials
+    const { authHeader, baseUrl } = await getOngoingWMSCredentials(context.auth.uid);
+    
+    console.log('Credentials retrieved successfully');
+    console.log('Base URL:', baseUrl);
+    console.log('Auth header present:', !!authHeader);
+    
+    // Test with a known order ID (214600)
+    const testOrderId = 214600;
+    const apiUrl = `${baseUrl.replace(/\/$/, '')}/orders/${testOrderId}`;
+    
+    console.log('Testing API call to:', apiUrl);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+        'User-Agent': 'LogiFlow/1.0'
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+    
+    if (response.ok) {
+      const order = await response.json();
+      return {
+        success: true,
+        message: 'Credentials and API connectivity verified',
+        orderId: testOrderId,
+        orderNumber: order.orderInfo?.orderNumber,
+        status: response.status,
+        hasOrderData: !!order
+      };
+    } else {
+      const errorText = await response.text();
+      console.log('Error response body:', errorText);
+      
+      return {
+        success: false,
+        message: `API returned status ${response.status}`,
+        status: response.status,
+        error: errorText,
+        headers: Object.fromEntries(response.headers.entries())
+      };
+    }
+    
+  } catch (error) {
+    console.error('Error testing credentials:', error);
+    
+    if (error.name === 'AbortError') {
+      throw new functions.https.HttpsError('deadline-exceeded', 'Request timed out');
+    }
+    
+    throw new functions.https.HttpsError('internal', `Error testing credentials: ${error.message}`);
   }
 });
