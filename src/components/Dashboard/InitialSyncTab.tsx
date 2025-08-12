@@ -171,7 +171,7 @@ const InitialSyncTab: React.FC = () => {
       
       addLog('🚀 Starting Cloud Tasks sync...');
       addLog(`📅 Date range: ${syncConfig.dateRange.start} to ${syncConfig.dateRange.end}`);
-      addLog(`📦 Chunk size: 75 orders (optimized)`);
+              addLog(`📦 Chunk size: 100 orders (optimized)`);
       addLog(`⚡ Max concurrent chunks: 8 (optimized)`);
       
       setSyncProgress(prev => ({ 
@@ -186,7 +186,7 @@ const InitialSyncTab: React.FC = () => {
       const result = await kickoffSync({ 
         startDate: syncConfig.dateRange.start,
         endDate: syncConfig.dateRange.end,
-        chunkSize: 75, // Optimized chunk size
+        chunkSize: 100, // Optimized chunk size
         maxConcurrentChunks: 8 // Optimized concurrency
       });
       
@@ -236,7 +236,7 @@ const InitialSyncTab: React.FC = () => {
             setSyncProgress(prev => ({ 
               ...prev, 
               progress: syncRun.progress,
-              syncedOrders: syncRun.completedChunks * 75, // Estimate based on optimized chunk size
+              syncedOrders: syncRun.completedChunks * 100, // Estimate based on optimized chunk size
               errors: syncRun.failedChunks,
               currentStep: `Processing chunks... (${syncRun.remainingChunks} remaining)`
             }));
