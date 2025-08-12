@@ -2461,7 +2461,7 @@ exports.kickoffOngoingWMSSync = functions.https.onCall(async (data, context) => 
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     
-    console.log(`Kickoff: Successfully enqueued ${tasks.length} tasks for sync run ${syncRunId}`);
+    console.log(`Kickoff: Successfully enqueued ${tasksCreated} tasks for sync run ${syncRunId}`);
     
     return {
       success: true,
