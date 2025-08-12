@@ -75,12 +75,18 @@ const InitialSyncTab: React.FC = () => {
       }
 
       addLog('🎉 Initial sync completed successfully!');
+      
+      // Only set isRunning to false for non-Cloud Tasks syncs
+      if (syncConfig.strategy !== 'cloud-tasks') {
+        setSyncProgress(prev => ({ ...prev, isRunning: false }));
+      }
     } catch (err: any) {
       console.error('Sync error:', err);
       const errorMessage = err.message || 'Unknown error occurred';
       addLog(`❌ Sync failed: ${errorMessage}`);
       setError(errorMessage);
-    } finally {
+      
+      // Set isRunning to false on error
       setSyncProgress(prev => ({ ...prev, isRunning: false }));
     }
   };
@@ -506,6 +512,11 @@ const InitialSyncTab: React.FC = () => {
 
       {/* Sync Controls */}
       <div className="flex items-center space-x-4">
+        {/* Debug info */}
+        <div className="text-xs text-gray-500">
+          isRunning: {syncProgress.isRunning ? 'true' : 'false'}
+        </div>
+        
         {!syncProgress.isRunning ? (
           <button
             onClick={startSync}
