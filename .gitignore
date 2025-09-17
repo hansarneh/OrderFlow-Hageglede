@@ -35,7 +35,21 @@ ui-debug.log
 .env.test.local
 .env.production.local
 
-# Service account keys
+# Service account keys and credentials
 service-account-key.json
 *-service-account-key.json
 *-firebase-adminsdk-*.json
+order-flow-bolt-*.json
+*-bolt-*.json
+.bolt/
+
+# Test files
+test-*.js
+*-test.js
+
+# Build artifacts
+*.tsbuildinfo
+
+# Temporary files
+temp-*.js
+*.tmp
