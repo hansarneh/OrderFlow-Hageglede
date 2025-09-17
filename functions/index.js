@@ -2833,3 +2833,64 @@ exports.listSyncRuns = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', `Failed to list sync runs: ${error.message}`);
   }
 });
+
+// Delete all documents from specified collections
+exports.deleteCollection = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+  }
+
+  const { collectionName } = data;
+  
+  if (!collectionName) {
+    throw new functions.https.HttpsError('invalid-argument', 'Collection name is required');
+  }
+
+  // Only allow deletion of specific collections for safety
+  const allowedCollections = ['customerOrders', 'orderLines', 'ongoingOrders', 'ongoingOrderLines'];
+  if (!allowedCollections.includes(collectionName)) {
+    throw new functions.https.HttpsError('permission-denied', `Collection ${collectionName} is not allowed for deletion`);
+  }
+
+  try {
+    console.log(`Deleting all documents from ${collectionName} collection...`);
+    
+    const collectionRef = db.collection(collectionName);
+    const snapshot = await collectionRef.get();
+    
+    if (snapshot.empty) {
+      return {
+        success: true,
+        message: `${collectionName} collection is already empty`,
+        deletedCount: 0
+      };
+    }
+    
+    console.log(`Found ${snapshot.size} documents in ${collectionName}`);
+    
+    // Delete documents in batches
+    const batch = db.batch();
+    let deletedCount = 0;
+    const batchSize = 500; // Firestore batch limit
+    
+    snapshot.docs.forEach((doc, index) => {
+      batch.delete(doc.ref);
+      deletedCount++;
+    });
+    
+    // Commit the batch
+    await batch.commit();
+    
+    console.log(`Successfully deleted ${deletedCount} documents from ${collectionName}`);
+    
+    return {
+      success: true,
+      message: `Successfully deleted ${deletedCount} documents from ${collectionName}`,
+      deletedCount: deletedCount
+    };
+    
+  } catch (error) {
+    console.error(`Error deleting ${collectionName}:`, error);
+    throw new functions.https.HttpsError('internal', `Failed to delete ${collectionName}: ${error.message}`);
+  }
+});
