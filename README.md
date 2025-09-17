@@ -1,6 +1,6 @@
-# LogiFlow - Logistics Dashboard
+# OrderFlow Hageglede
 
-A comprehensive logistics dashboard for managing inventory, orders, and shipments.
+A comprehensive logistics dashboard for managing inventory, orders, and shipments with Ongoing WMS integration.
 
 ## Setup Instructions
 

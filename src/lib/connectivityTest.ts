@@ -38,7 +38,7 @@ export async function testEndpoint(
       signal: controller.signal,
       credentials: 'omit', // Don't send credentials to avoid CORS issues
       headers: {
-        'User-Agent': 'LogiFlow-ConnectivityTest/1.0',
+        'User-Agent': 'OrderFlow-Hageglede-ConnectivityTest/1.0',
         ...headers
       }
     });

@@ -47,7 +47,7 @@ export async function testFirebaseConnectivity(projectId: string = 'order-flow-b
         mode: 'no-cors', // Allow cross-origin requests without CORS preflight
         // Set a user agent to avoid being blocked
         headers: {
-          'User-Agent': 'LogiFlow-ConnectivityTest/1.0'
+          'User-Agent': 'OrderFlow-Hageglede-ConnectivityTest/1.0'
         }
       });
       
@@ -128,7 +128,7 @@ export async function testUrlConnectivity(url: string, timeout: number = 5000): 
       credentials: 'omit',
       mode: 'no-cors',
       headers: {
-        'User-Agent': 'LogiFlow-ConnectivityTest/1.0'
+        'User-Agent': 'OrderFlow-Hageglede-ConnectivityTest/1.0'
       }
     });
     

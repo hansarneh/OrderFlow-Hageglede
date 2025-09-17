@@ -1570,7 +1570,7 @@ exports.scheduledOngoingOrderSync = functions.pubsub.schedule('every 1 hours').o
                 headers: {
                   'Authorization': authHeader,
                   'Content-Type': 'application/json',
-                  'User-Agent': 'LogiFlow/1.0'
+                  'User-Agent': 'OrderFlow-Hageglede/1.0'
                 }
               });
 
@@ -1644,7 +1644,7 @@ exports.scheduledOngoingPurchaseOrderSync = functions.pubsub.schedule('every 1 h
                 headers: {
                   'Authorization': authHeader,
                   'Content-Type': 'application/json',
-                  'User-Agent': 'LogiFlow/1.0'
+                  'User-Agent': 'OrderFlow-Hageglede/1.0'
                 }
               });
 
